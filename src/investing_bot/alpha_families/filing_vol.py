@@ -46,6 +46,8 @@ def generate_filing_vol_signals(feature_rows: list[dict[str, Any]]) -> list[Alph
         score = max(0.0, expected_edge * confidence * liquidity_score)
         event_key = str(row.get("event_key") or row.get("filing_id") or f"filing:{symbol}").strip()
         side = "sell" if iv_spread > 0 else "buy"
+        form_type = str(row.get("form_type") or row.get("sec_form_type") or "").strip().upper()
+        evidence_universe = "filing_vol_8k" if form_type in {"8-K", "8K"} else "filing_vol_periodic"
 
         signals.append(
             AlphaSignal(
@@ -62,6 +64,8 @@ def generate_filing_vol_signals(feature_rows: list[dict[str, Any]]) -> list[Alph
                     "risk_class": "defined_risk_long_convexity",
                     "filing_shock_score": filing_shock,
                     "iv_minus_realized": iv_spread,
+                    "evidence_universe": evidence_universe,
+                    "form_type": form_type or "unknown",
                 },
             )
         )

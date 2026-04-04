@@ -108,3 +108,19 @@ def test_registry_can_gate_families_on_broker_confirmed_live_evidence():
     )
     assert len(signals) == 1
     assert signals[0].family == "post_event_iv"
+
+
+def test_shadow_lane_keeps_learning_without_live_evidence():
+    registry = build_default_alpha_registry()
+    rows = _feature_rows()
+
+    shadow_signals = registry.evaluate_shadow_all(rows)
+    capital_signals = registry.evaluate_capital_eligible(
+        rows,
+        live_evidence_by_family={"post_event_iv": 35},
+        min_broker_confirmed_live_samples=30,
+    )
+
+    assert len(shadow_signals) == 3
+    assert len(capital_signals) == 1
+    assert capital_signals[0].family == "post_event_iv"

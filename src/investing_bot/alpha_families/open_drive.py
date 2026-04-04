@@ -48,6 +48,9 @@ def generate_open_drive_signals(feature_rows: list[dict[str, Any]]) -> list[Alph
         side = "buy" if _as_float(row.get("drive_direction"), 1.0) >= 0 else "sell"
         score = expected_edge * confidence * min(1.0, depth / 100.0)
         event_key = str(row.get("event_key") or f"open_drive:{symbol}").strip()
+        liquidity_tier = str(row.get("liquidity_tier") or "").strip().lower()
+        is_top_tier = liquidity_tier in {"top_tier", "tier1", "top"} or (depth >= 150 and spread <= 0.02)
+        evidence_universe = "open_drive_top_tier" if is_top_tier else "open_drive_broad"
 
         signals.append(
             AlphaSignal(
@@ -64,6 +67,8 @@ def generate_open_drive_signals(feature_rows: list[dict[str, Any]]) -> list[Alph
                     "risk_class": "defined_risk_long_convexity",
                     "opening_drive_score": drive_score,
                     "minutes_from_open": minutes_from_open,
+                    "liquidity_tier": liquidity_tier or "unknown",
+                    "evidence_universe": evidence_universe,
                 },
             )
         )

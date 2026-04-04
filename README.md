@@ -44,6 +44,7 @@ This repo now includes a working Python starter focused on the highest-ROI path:
 37. Campaign manager + sequential promotion/kill testing (`campaign_manager.py` + `sequential_tests.py`).
 38. Point-in-time feature caching and tradable-universe construction (`feature_store.py` + `universe_builder.py`).
 39. Family-weighted probe-budget allocation and broker-confirmed-live challenger gating for promotion.
+40. Split shadow-vs-capital alpha lanes, family/style-local challenger scope, adaptive family reweighting, and evidence-universe segmentation.
 
 ## Package Layout
 - `src/investing_bot/scoring.py`: net executable edge formula.
@@ -77,7 +78,7 @@ This repo now includes a working Python starter focused on the highest-ROI path:
 - `src/investing_bot/ops_dashboard.py`: normalized operations dashboard payloads.
 - `src/investing_bot/corp_actions.py`: adjusted/non-standard/assignment-risk context and hard-block helpers.
 - `src/investing_bot/instrument_registry.py`: canonical instrument profiles and tradability checks.
-- `src/investing_bot/champion_challenger.py`: policy promotion decisions with broker-confirmed live evidence gating.
+- `src/investing_bot/champion_challenger.py`: family/style-local policy promotion decisions with broker-confirmed live evidence gating.
 - `src/investing_bot/online_policy.py`: broker-confirmed online action learning primitives.
 - `src/investing_bot/capital_efficiency.py`: alpha-density and capital-efficiency metrics.
 - `src/investing_bot/ruin_guard.py`: drawdown/volatility/streak-based Kelly de-risking controls.
@@ -92,7 +93,7 @@ This repo now includes a working Python starter focused on the highest-ROI path:
 - `src/investing_bot/execution_audit.py`: lifecycle-level execution audits and summary metrics.
 - `src/investing_bot/alpha_registry.py`: alpha family specs, signal registration, and candidate conversion.
 - `src/investing_bot/alpha_families/`: built-in alpha families (`filing_vol`, `post_event_iv`, `open_drive`).
-- `src/investing_bot/campaign_manager.py`: stage decisions plus explicit family-weighted probe-budget allocation.
+- `src/investing_bot/campaign_manager.py`: stage decisions, explicit family probe budgets, and adaptive reweighting from live evidence.
 - `src/investing_bot/sequential_tests.py`: lower/upper confidence-bound utilities for promote/kill logic.
 - `src/investing_bot/feature_store.py`: point-in-time feature snapshots and merged feature payload helpers.
 - `src/investing_bot/universe_builder.py`: liquidity/instrument-aware universe filtering and family-ready row mapping.

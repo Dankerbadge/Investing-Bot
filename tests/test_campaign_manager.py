@@ -1,4 +1,10 @@
-from investing_bot.campaign_manager import CampaignManager, allocate_probe_budget, resolve_family_probe_weight
+from investing_bot.campaign_manager import (
+    CampaignManager,
+    FamilyBudgetEvidence,
+    allocate_probe_budget,
+    derive_adaptive_family_weights,
+    resolve_family_probe_weight,
+)
 
 
 def test_allocate_probe_budget_respects_stage_and_health():
@@ -65,4 +71,58 @@ def test_campaign_manager_allocates_probe_budget_explicitly_by_family_weights():
     open_drive = allocations["open_drive"].allocated_probe_budget
 
     assert round(post + filing + open_drive, 6) == 1000.0
+    assert post > filing > open_drive
+
+
+def test_derive_adaptive_family_weights_respects_floor_and_cap():
+    weights = derive_adaptive_family_weights(
+        alpha_names=["post_event_iv", "filing_vol", "open_drive"],
+        evidence_by_alpha={
+            "post_event_iv": FamilyBudgetEvidence(
+                alpha_name="post_event_iv",
+                live_alpha_density_lcb=0.03,
+                capital_efficiency=0.025,
+                broker_confirmed_live_samples=200,
+            ),
+            "filing_vol": FamilyBudgetEvidence(
+                alpha_name="filing_vol",
+                live_alpha_density_lcb=0.01,
+                capital_efficiency=0.01,
+                broker_confirmed_live_samples=80,
+            ),
+            "open_drive": FamilyBudgetEvidence(
+                alpha_name="open_drive",
+                live_alpha_density_lcb=-0.005,
+                capital_efficiency=-0.002,
+                broker_confirmed_live_samples=40,
+            ),
+        },
+        min_floor_weight=0.10,
+        max_cap_weight=0.70,
+    )
+    assert abs(sum(weights.values()) - 1.0) < 1e-5
+    assert all(value >= 0.10 for value in weights.values())
+    assert all(value <= 0.70 for value in weights.values())
+    assert weights["post_event_iv"] > weights["filing_vol"] > weights["open_drive"]
+
+
+def test_campaign_manager_adaptive_allocation_reweights_budget_from_live_evidence():
+    manager = CampaignManager()
+    manager.start_campaign(alpha_name="post_event_iv", stage="probe", total_budget=10000)
+    manager.start_campaign(alpha_name="filing_vol", stage="probe", total_budget=10000)
+    manager.start_campaign(alpha_name="open_drive", stage="probe", total_budget=10000)
+
+    allocations = manager.allocate_family_probe_budgets(
+        total_budget=1000,
+        adaptive_evidence_by_alpha={
+            "post_event_iv": {"live_alpha_density_lcb": 0.02, "capital_efficiency": 0.015, "broker_confirmed_live_samples": 120},
+            "filing_vol": {"live_alpha_density_lcb": 0.005, "capital_efficiency": 0.004, "broker_confirmed_live_samples": 60},
+            "open_drive": {"live_alpha_density_lcb": -0.005, "capital_efficiency": -0.003, "broker_confirmed_live_samples": 40},
+        },
+    )
+    post = allocations["post_event_iv"].allocated_probe_budget
+    filing = allocations["filing_vol"].allocated_probe_budget
+    open_drive = allocations["open_drive"].allocated_probe_budget
+
+    assert abs((post + filing + open_drive) - 1000.0) < 1e-5
     assert post > filing > open_drive

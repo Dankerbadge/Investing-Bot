@@ -12,6 +12,7 @@ def test_filing_vol_generator_requires_recent_filing_and_shock():
             "sec_recent_filing": True,
             "filing_shock_score": 0.40,
             "iv_minus_realized": 0.05,
+            "form_type": "8-K",
             "model_confidence": 0.8,
             "liquidity_score": 0.9,
         },
@@ -26,6 +27,7 @@ def test_filing_vol_generator_requires_recent_filing_and_shock():
     assert len(signals) == 1
     assert signals[0].symbol == "SPY"
     assert signals[0].side == "sell"
+    assert signals[0].metadata["evidence_universe"] == "filing_vol_8k"
 
 
 def test_post_event_iv_generator_filters_by_event_window():
@@ -35,6 +37,7 @@ def test_post_event_iv_generator_filters_by_event_window():
             "hours_since_event": 4,
             "post_event_iv_ratio": 1.2,
             "mean_reversion_score": 0.6,
+            "expiration_type": "weekly",
             "model_confidence": 0.75,
             "liquidity_score": 0.85,
         },
@@ -49,6 +52,7 @@ def test_post_event_iv_generator_filters_by_event_window():
     assert len(signals) == 1
     assert signals[0].symbol == "QQQ"
     assert signals[0].side == "sell"
+    assert signals[0].metadata["evidence_universe"] == "post_event_iv_weekly"
 
 
 def test_open_drive_generator_uses_direction_for_side():
@@ -60,6 +64,7 @@ def test_open_drive_generator_uses_direction_for_side():
             "book_depth_contracts": 100,
             "spread_cost": 0.01,
             "drive_direction": -1,
+            "liquidity_tier": "top_tier",
             "model_confidence": 0.70,
         }
     ]
@@ -67,3 +72,4 @@ def test_open_drive_generator_uses_direction_for_side():
     assert len(signals) == 1
     assert signals[0].symbol == "IWM"
     assert signals[0].side == "sell"
+    assert signals[0].metadata["evidence_universe"] == "open_drive_top_tier"

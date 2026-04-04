@@ -46,6 +46,8 @@ def generate_post_event_iv_signals(feature_rows: list[dict[str, Any]]) -> list[A
         score = expected_edge * confidence * liquidity_score
         event_key = str(row.get("event_key") or row.get("earnings_id") or f"post_event:{symbol}").strip()
         side = "sell"
+        expiration_type = str(row.get("expiration_type") or "standard").strip().lower()
+        evidence_universe = "post_event_iv_weekly" if expiration_type in {"weekly", "quarterly", "non_standard"} else "post_event_iv_standard"
 
         signals.append(
             AlphaSignal(
@@ -63,6 +65,8 @@ def generate_post_event_iv_signals(feature_rows: list[dict[str, Any]]) -> list[A
                     "post_event_iv_ratio": iv_ratio,
                     "mean_reversion_score": mean_reversion_score,
                     "hours_since_event": hours_since_event,
+                    "expiration_type": expiration_type,
+                    "evidence_universe": evidence_universe,
                 },
             )
         )

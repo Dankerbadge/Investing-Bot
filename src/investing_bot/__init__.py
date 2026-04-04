@@ -34,7 +34,9 @@ from .campaign_manager import (
     AlphaCampaign,
     CampaignDecision,
     CampaignManager,
+    FamilyBudgetEvidence,
     allocate_probe_budget,
+    derive_adaptive_family_weights,
     resolve_family_probe_weight,
 )
 from .chaos_harness import ChaosRunResult, ChaosScenario, ChaosScenarioResult, default_fault_scenarios, run_chaos_suite
@@ -172,6 +174,7 @@ __all__ = [
     "CounterfactualAttribution",
     "DailyRollup",
     "DeploymentDecision",
+    "FamilyBudgetEvidence",
     "EventContext",
     "ExecutionAudit",
     "ExecutionAuditSummary",
@@ -253,6 +256,7 @@ __all__ = [
     "default_policy_actions",
     "detect_orphaned_orders",
     "dynamic_fractional_kelly_fraction",
+    "derive_adaptive_family_weights",
     "estimate_latency_penalty",
     "evaluate_bucket_health",
     "evaluate_challenger_dr",

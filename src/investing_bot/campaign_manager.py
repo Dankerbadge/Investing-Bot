@@ -50,6 +50,14 @@ class CampaignDecision:
     lcb95: float
 
 
+@dataclass(frozen=True)
+class FamilyBudgetEvidence:
+    alpha_name: str
+    live_alpha_density_lcb: float = 0.0
+    capital_efficiency: float = 0.0
+    broker_confirmed_live_samples: int = 0
+
+
 def _normalize_stage(stage: str) -> str:
     text = str(stage or "").strip().lower()
     if text in {"scaled", "scaled_1"}:
@@ -100,6 +108,111 @@ def resolve_family_probe_weight(
     if value is None:
         value = max(0.0, float(default_weight))
     return round(float(value), 6)
+
+
+def derive_adaptive_family_weights(
+    *,
+    alpha_names: list[str] | tuple[str, ...],
+    evidence_by_alpha: dict[str, FamilyBudgetEvidence | dict[str, Any]] | None = None,
+    baseline_weights: dict[str, float] | None = None,
+    min_floor_weight: float = 0.10,
+    max_cap_weight: float = 0.70,
+    min_live_samples_for_scale: int = 30,
+    default_weight: float = 0.10,
+) -> dict[str, float]:
+    keys = [str(name or "").strip().lower() for name in alpha_names if str(name or "").strip()]
+    keys = list(dict.fromkeys(keys))
+    if not keys:
+        return {}
+
+    n = len(keys)
+    floor = min(max(0.0, float(min_floor_weight)), 1.0 / n)
+    cap = max(floor, min(1.0, float(max_cap_weight)))
+
+    evidence_map: dict[str, FamilyBudgetEvidence] = {}
+    for key, row in (evidence_by_alpha or {}).items():
+        name = str(key or "").strip().lower()
+        if not name:
+            continue
+        if isinstance(row, FamilyBudgetEvidence):
+            evidence_map[name] = row
+            continue
+        if isinstance(row, dict):
+            evidence_map[name] = FamilyBudgetEvidence(
+                alpha_name=name,
+                live_alpha_density_lcb=float(row.get("live_alpha_density_lcb") or 0.0),
+                capital_efficiency=float(row.get("capital_efficiency") or 0.0),
+                broker_confirmed_live_samples=int(row.get("broker_confirmed_live_samples") or 0),
+            )
+
+    raw_scores: dict[str, float] = {}
+    for key in keys:
+        baseline = resolve_family_probe_weight(
+            key,
+            family_probe_weights=baseline_weights,
+            default_weight=default_weight,
+        )
+        evidence = evidence_map.get(key)
+        if evidence is None:
+            raw_scores[key] = max(0.0, baseline)
+            continue
+
+        confidence = min(1.0, max(0.0, evidence.broker_confirmed_live_samples / max(1, int(min_live_samples_for_scale))))
+        edge_signal = max(-1.0, min(1.5, evidence.live_alpha_density_lcb / 0.02))
+        efficiency_signal = max(-1.0, min(1.5, evidence.capital_efficiency / 0.02))
+        adjustment = 1.0 + confidence * ((edge_signal * 0.60) + (efficiency_signal * 0.40))
+        raw_scores[key] = max(0.000001, baseline * max(0.1, adjustment))
+
+    weights = {key: floor for key in keys}
+    remaining = max(0.0, 1.0 - (floor * n))
+    if remaining <= 0:
+        return weights
+
+    capacity = {key: max(0.0, cap - floor) for key in keys}
+    free = {key for key in keys if capacity[key] > 0}
+    eps = 1e-12
+    while remaining > eps and free:
+        raw_total = sum(max(eps, raw_scores[key]) for key in free)
+        if raw_total <= eps:
+            equal_share = remaining / len(free)
+            for key in list(free):
+                delta = min(capacity[key], equal_share)
+                weights[key] += delta
+                capacity[key] -= delta
+                remaining -= delta
+                if capacity[key] <= eps:
+                    free.remove(key)
+            continue
+
+        tentative = {key: remaining * (max(eps, raw_scores[key]) / raw_total) for key in free}
+        capped = [key for key in free if tentative[key] >= (capacity[key] - eps)]
+        if not capped:
+            for key in free:
+                delta = min(capacity[key], tentative[key])
+                weights[key] += delta
+                capacity[key] -= delta
+                remaining -= delta
+            break
+
+        for key in capped:
+            delta = capacity[key]
+            weights[key] += delta
+            remaining -= delta
+            capacity[key] = 0.0
+            free.remove(key)
+
+    # Numerical cleanup to keep sum exactly 1 while respecting bounds.
+    total = sum(weights.values())
+    if abs(total - 1.0) > 1e-9:
+        diff = 1.0 - total
+        ordered = sorted(keys, key=lambda key: raw_scores.get(key, 0.0), reverse=True)
+        for key in ordered:
+            candidate = weights[key] + diff
+            if floor - 1e-9 <= candidate <= cap + 1e-9:
+                weights[key] = candidate
+                break
+
+    return {key: float(weights[key]) for key in keys}
 
 
 @dataclass
@@ -214,26 +327,36 @@ class CampaignManager:
         bucket_health_by_alpha: dict[str, float] | None = None,
         family_probe_weights: dict[str, float] | None = None,
         default_family_probe_weight: float = 0.10,
+        adaptive_evidence_by_alpha: dict[str, FamilyBudgetEvidence | dict[str, Any]] | None = None,
+        min_floor_weight: float = 0.10,
+        max_cap_weight: float = 0.70,
+        min_live_samples_for_scale: int = 30,
     ) -> dict[str, AlphaCampaign]:
         if not self.campaigns:
             return {}
 
         health_map = {str(key).strip().lower(): float(value) for key, value in (bucket_health_by_alpha or {}).items()}
-        rows: list[tuple[str, AlphaCampaign, float]] = []
+        active_names = list(self.campaigns.keys())
+        adaptive_weights = derive_adaptive_family_weights(
+            alpha_names=active_names,
+            evidence_by_alpha=adaptive_evidence_by_alpha,
+            baseline_weights=family_probe_weights,
+            min_floor_weight=min_floor_weight,
+            max_cap_weight=max_cap_weight,
+            min_live_samples_for_scale=min_live_samples_for_scale,
+            default_weight=default_family_probe_weight,
+        )
+        rows: list[tuple[str, AlphaCampaign, float, float]] = []
         for alpha_name, campaign in self.campaigns.items():
             stage_mult = _STAGE_MULTIPLIERS.get(_normalize_stage(campaign.stage), 0.05)
             health = max(0.0, min(1.0, health_map.get(alpha_name, 1.0)))
-            family_weight = resolve_family_probe_weight(
-                alpha_name,
-                family_probe_weights=family_probe_weights,
-                default_weight=default_family_probe_weight,
-            )
+            family_weight = adaptive_weights.get(alpha_name, campaign.family_probe_weight)
             weighted_score = stage_mult * health * family_weight
-            rows.append((alpha_name, campaign, weighted_score))
+            rows.append((alpha_name, campaign, weighted_score, family_weight))
 
-        denominator = sum(score for _, _, score in rows if score > 0)
+        denominator = sum(score for _, _, score, _ in rows if score > 0)
         updated_campaigns: dict[str, AlphaCampaign] = {}
-        for alpha_name, campaign, score in rows:
+        for alpha_name, campaign, score, family_weight in rows:
             allocated = 0.0
             if denominator > 0 and score > 0:
                 allocated = float(total_budget) * (score / denominator)
@@ -241,11 +364,7 @@ class CampaignManager:
                 alpha_name=campaign.alpha_name,
                 stage=campaign.stage,
                 allocated_probe_budget=round(max(0.0, allocated), 6),
-                family_probe_weight=resolve_family_probe_weight(
-                    alpha_name,
-                    family_probe_weights=family_probe_weights,
-                    default_weight=default_family_probe_weight,
-                ),
+                family_probe_weight=round(max(0.0, family_weight), 6),
                 spent_budget=campaign.spent_budget,
                 confirmed_samples=campaign.confirmed_samples,
                 test_state=campaign.test_state,

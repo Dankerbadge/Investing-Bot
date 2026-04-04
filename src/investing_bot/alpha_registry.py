@@ -82,6 +82,51 @@ class AlphaRegistry:
         rows = [row for row in feature_rows if isinstance(row, dict)]
         return generator(rows)
 
+    def _resolve_enabled_families(
+        self,
+        enabled_families: tuple[str, ...] | list[str] | None,
+    ) -> tuple[str, ...]:
+        if enabled_families:
+            return tuple(dict.fromkeys(str(name).strip().lower() for name in enabled_families if str(name).strip()))
+        return self.available_families()
+
+    @staticmethod
+    def _normalize_evidence_map(live_evidence_by_family: dict[str, int] | None) -> dict[str, int]:
+        return {
+            str(name or "").strip().lower(): int(value)
+            for name, value in (live_evidence_by_family or {}).items()
+            if str(name or "").strip()
+        }
+
+    def evaluate_shadow_all(
+        self,
+        feature_rows: list[dict[str, Any]],
+        enabled_families: tuple[str, ...] | list[str] | None = None,
+    ) -> list[AlphaSignal]:
+        families = self._resolve_enabled_families(enabled_families)
+        signals: list[AlphaSignal] = []
+        for family in families:
+            signals.extend(self.evaluate_family(family, feature_rows))
+        return sorted(signals, key=lambda row: (row.score, row.expected_edge, row.confidence), reverse=True)
+
+    def evaluate_capital_eligible(
+        self,
+        feature_rows: list[dict[str, Any]],
+        enabled_families: tuple[str, ...] | list[str] | None = None,
+        live_evidence_by_family: dict[str, int] | None = None,
+        min_broker_confirmed_live_samples: int = 30,
+    ) -> list[AlphaSignal]:
+        families = self._resolve_enabled_families(enabled_families)
+        evidence_map = self._normalize_evidence_map(live_evidence_by_family)
+        minimum = max(0, int(min_broker_confirmed_live_samples))
+
+        signals: list[AlphaSignal] = []
+        for family in families:
+            if minimum > 0 and evidence_map.get(family, 0) < minimum:
+                continue
+            signals.extend(self.evaluate_family(family, feature_rows))
+        return sorted(signals, key=lambda row: (row.score, row.expected_edge, row.confidence), reverse=True)
+
     def evaluate_all(
         self,
         feature_rows: list[dict[str, Any]],
@@ -89,24 +134,17 @@ class AlphaRegistry:
         live_evidence_by_family: dict[str, int] | None = None,
         min_broker_confirmed_live_samples: int = 0,
     ) -> list[AlphaSignal]:
-        if enabled_families:
-            families = tuple(dict.fromkeys(str(name).strip().lower() for name in enabled_families if str(name).strip()))
-        else:
-            families = self.available_families()
-
-        evidence_map = {
-            str(name or "").strip().lower(): int(value)
-            for name, value in (live_evidence_by_family or {}).items()
-            if str(name or "").strip()
-        }
-
-        signals: list[AlphaSignal] = []
-        for family in families:
-            if int(min_broker_confirmed_live_samples) > 0:
-                if evidence_map.get(family, 0) < int(min_broker_confirmed_live_samples):
-                    continue
-            signals.extend(self.evaluate_family(family, feature_rows))
-        return sorted(signals, key=lambda row: (row.score, row.expected_edge, row.confidence), reverse=True)
+        # Backward-compatible entrypoint:
+        # - no evidence threshold => shadow lane
+        # - evidence threshold > 0 => capital-eligible lane
+        if int(min_broker_confirmed_live_samples) > 0:
+            return self.evaluate_capital_eligible(
+                feature_rows,
+                enabled_families=enabled_families,
+                live_evidence_by_family=live_evidence_by_family,
+                min_broker_confirmed_live_samples=min_broker_confirmed_live_samples,
+            )
+        return self.evaluate_shadow_all(feature_rows, enabled_families=enabled_families)
 
     def signals_to_candidates(
         self,
