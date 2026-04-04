@@ -28,6 +28,8 @@ This repo now includes a working Python starter focused on the highest-ROI path:
 21. Latency profile and kill-switch path to block stale/slow decisions before capital is deployed.
 22. Promotion/deployment control layer for `disabled -> shadow -> probe -> scaled_1 -> scaled_2 -> scaled_3 -> mature` action buckets.
 23. Event/regime context integration (`SEC` filing windows + `FRED/Cboe` regime tags) feeding policy, promotion, and deployment controls.
+24. Broker-confirmed portfolio truth layer (`ledger.py` + `portfolio_state.py`) for realized/unrealized PnL, exposures, and max-loss snapshots.
+25. Experiment lineage + deterministic replay (`experiment_registry.py` + `replay.py`) for policy/versioned decision auditing.
 
 ## Package Layout
 - `src/investing_bot/scoring.py`: net executable edge formula.
@@ -52,6 +54,10 @@ This repo now includes a working Python starter focused on the highest-ROI path:
 - `src/investing_bot/capabilities.py`: broker/API capability registry and action gating.
 - `src/investing_bot/event_context.py`: filing/earnings/macro/ex-dividend event risk tagging.
 - `src/investing_bot/regime.py`: volatility/liquidity/macro/crowding regime tagging.
+- `src/investing_bot/ledger.py`: broker-confirmed ledger entries and cash/position reconstruction.
+- `src/investing_bot/portfolio_state.py`: canonical portfolio truth from ledger + quotes + Greeks.
+- `src/investing_bot/experiment_registry.py`: policy/version/config/feature stamping for decision lineage.
+- `src/investing_bot/replay.py`: deterministic replay over archived streams for offline validation.
 
 ## Core Score
 ```python

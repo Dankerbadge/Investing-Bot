@@ -12,14 +12,17 @@ from .calibration import (
 )
 from .deployment_control import DeploymentDecision, compute_deployment_decision
 from .event_context import EventContext, event_context_penalty, event_context_reasons, infer_event_context
+from .experiment_registry import ExperimentRegistry, stable_hash, stamp_decision_context
 from .exit_policy import ExitDecision, choose_exit_action
 from .execution_learning import LearnedExecutionPrior, adjustments_for_candidate, learn_execution_priors
 from .execution_style import ExecutionStyleDecision, choose_execution_style
 from .gating import LiquidityGate, evaluate_liquidity
+from .ledger import LedgerEntry, PortfolioLedger
 from .latency import LatencyProfile, build_latency_profile, estimate_latency_penalty, latency_kill_switch
 from .models import Candidate, ScoredCandidate, SelectedTrade
 from .pipeline import build_trade_plan
 from .policy import ActionPolicyStats, choose_entry_action, default_policy_actions, update_entry_policy
+from .portfolio_state import PortfolioState, PositionState, compute_portfolio_state
 from .promotion import BucketPromotionMetrics, PromotionPolicy, evaluate_stage_transition, stage_capital_multiplier
 from .regime import RegimeContext, infer_regime_context, regime_penalty, regime_reasons
 from .reconciliation import (
@@ -38,6 +41,7 @@ from .sizing import (
     notional_from_fraction,
 )
 from .stream_manager import StreamAction, StreamSubscriptionManager
+from .replay import ReplayResult, replay_archive_stream, replay_records
 
 __all__ = [
     "ArchiveWriter",
@@ -52,14 +56,20 @@ __all__ = [
     "DeploymentDecision",
     "ExecutionStyleDecision",
     "EventContext",
+    "ExperimentRegistry",
     "ExitDecision",
+    "LedgerEntry",
     "LearnedExecutionPrior",
     "LatencyProfile",
     "LiquidityGate",
     "OrderLifecycle",
     "OrderStatusTruth",
+    "PortfolioLedger",
+    "PortfolioState",
+    "PositionState",
     "PromotionPolicy",
     "RegimeContext",
+    "ReplayResult",
     "ReliabilityBin",
     "ScoredCandidate",
     "SelectedTrade",
@@ -68,6 +78,7 @@ __all__ = [
     "action_is_allowed",
     "adjustments_for_candidate",
     "build_trade_plan",
+    "compute_portfolio_state",
     "build_latency_profile",
     "brier_score",
     "choose_entry_action",
@@ -96,10 +107,14 @@ __all__ = [
     "reconcile_order_lifecycle",
     "resolve_order_status",
     "reliability_bins",
+    "replay_archive_stream",
+    "replay_records",
     "regime_penalty",
     "regime_reasons",
     "select_concentrated_portfolio",
     "should_pause_trading",
+    "stable_hash",
+    "stamp_decision_context",
     "stage_capital_multiplier",
     "summarize_fill_calibration",
     "update_entry_policy",
