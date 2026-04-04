@@ -56,6 +56,21 @@ def test_liquidity_gate_fails_stale_quote_and_spread():
     assert "spread_too_wide" in reasons
 
 
+def test_contract_hygiene_filters_adjusted_and_nonstandard():
+    candidate = _candidate(
+        metadata={
+            "is_adjusted_option": True,
+            "is_nonstandard_expiration": True,
+            "quote_locked_or_crossed": True,
+        }
+    )
+    passed, reasons = evaluate_liquidity(candidate, LiquidityGate())
+    assert passed is False
+    assert "adjusted_option_excluded" in reasons
+    assert "nonstandard_expiration_excluded" in reasons
+    assert "locked_or_crossed_market" in reasons
+
+
 def test_adjusted_edge_haircut_reduces_edge():
     candidate = _candidate()
     raw = compute_net_executable_edge(candidate)

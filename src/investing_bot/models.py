@@ -44,6 +44,10 @@ class ScoredCandidate:
     uncertainty_penalty: float = 0.0
     execution_penalty: float = 0.0
     model_error_score: float = 0.0
+    alpha_density: float = 0.0
+    execution_style: str = "passive_touch"
+    request_budget_penalty: float = 0.0
+    cancel_replace_race_penalty: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -58,3 +62,5 @@ class SelectedTrade:
     target_notional: float
     confidence: float
     raw_net_edge: float = 0.0
+    alpha_density: float = 0.0
+    execution_style: str = "passive_touch"

@@ -1,6 +1,7 @@
 from .archive import ArchiveWriter
 from .attribution import CounterfactualAttribution, compute_counterfactual_attribution
 from .execution_learning import LearnedExecutionPrior, adjustments_for_candidate, learn_execution_priors
+from .execution_style import ExecutionStyleDecision, choose_execution_style
 from .gating import LiquidityGate, evaluate_liquidity
 from .models import Candidate, ScoredCandidate, SelectedTrade
 from .pipeline import build_trade_plan
@@ -18,6 +19,7 @@ __all__ = [
     "Candidate",
     "ConcentrationLimits",
     "CounterfactualAttribution",
+    "ExecutionStyleDecision",
     "LearnedExecutionPrior",
     "LiquidityGate",
     "ScoredCandidate",
@@ -27,6 +29,7 @@ __all__ = [
     "compute_edge_breakdown",
     "compute_counterfactual_attribution",
     "compute_net_executable_edge",
+    "choose_execution_style",
     "dynamic_fractional_kelly_fraction",
     "evaluate_liquidity",
     "fractional_kelly_fraction",

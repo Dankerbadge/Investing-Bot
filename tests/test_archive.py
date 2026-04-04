@@ -11,4 +11,14 @@ def test_archive_writer_appends_jsonl(tmp_path):
     assert len(lines) == 1
     payload = json.loads(lines[0])
     assert payload["ticker"] == "SPY-TEST"
+    assert payload["data_source"] == "live"
     assert "recorded_at" in payload
+
+
+def test_archive_writer_separates_live_and_ghost_streams(tmp_path):
+    writer = ArchiveWriter(root_dir=tmp_path)
+    live_path = writer.record_order({"ticker": "SPY-LIVE"}, source="live")
+    ghost_path = writer.record_order({"ticker": "SPY-GHOST"}, source="ghost")
+
+    assert "/orders/live/" in str(live_path)
+    assert "/orders/ghost/" in str(ghost_path)

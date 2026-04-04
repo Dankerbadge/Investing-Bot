@@ -3,18 +3,26 @@
   "kelly_fraction": 0.25,
   "min_kelly_used": 0.002,
   "max_kelly_used": 0.1,
+  "learning_allowed_sources": ["live"],
+  "order_request_budget_per_minute": 120,
   "liquidity_gate": {
     "min_fill_probability": 0.55,
     "max_quote_age_seconds": 3.0,
     "min_book_depth_contracts": 20,
     "max_spread_cost": 0.03,
-    "min_confidence": 0.55
+    "min_confidence": 0.55,
+    "reject_locked_or_crossed_quotes": true,
+    "allow_adjusted_options": false,
+    "allow_nonstandard_expirations": false
   },
   "concentration_limits": {
     "max_open_positions": 3,
     "max_per_underlying": 1,
     "max_per_event": 1,
+    "max_per_strategy_family": 2,
     "max_single_position_fraction": 0.1,
-    "max_gross_notional_fraction": 0.35
+    "max_gross_notional_fraction": 0.35,
+    "max_shock_loss_fraction": 0.2,
+    "shock_scenarios": ["gap_down", "vol_crush", "vol_expansion", "spread_blowout", "stale_quote"]
   }
 }

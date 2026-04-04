@@ -59,3 +59,21 @@ def test_pipeline_allows_zero_positions_when_no_positive_edge():
     )
 
     assert result["selected_count"] == 0
+
+
+def test_pipeline_ranks_by_alpha_density_not_raw_edge():
+    slow_high_edge = _candidate("SPY-SLOW", "SPY", "event-1", 0.08)
+    fast_lower_edge = _candidate("QQQ-FAST", "QQQ", "event-2", 0.06)
+
+    slow_high_edge.metadata["expected_holding_minutes"] = 1440
+    fast_lower_edge.metadata["expected_holding_minutes"] = 30
+
+    result = build_trade_plan(
+        candidates=[slow_high_edge, fast_lower_edge],
+        bankroll=10000,
+        gate=LiquidityGate(),
+        limits=ConcentrationLimits(max_open_positions=1, max_per_underlying=1, max_per_event=1),
+    )
+
+    assert result["selected_count"] == 1
+    assert result["selected"][0]["ticker"] == "QQQ-FAST"

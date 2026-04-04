@@ -13,6 +13,9 @@ This repo now includes a working Python starter focused on the highest-ROI path:
 6. Ghost broker simulation for passive fill and cancel/replace behavior.
 7. Closed-loop execution learning: archive-derived fill/slippage/decay priors feed score and size.
 8. Counterfactual attribution to isolate selection vs execution vs sizing leakage.
+9. Source-segregated execution learning (`live` / `paper` / `ghost`) with hierarchical bucket shrinkage.
+10. Alpha-density ranking and execution-style optimization with request-budget penalties.
+11. Contract-hygiene kill switches for adjusted/nonstandard/locked-or-crossed options.
 
 ## Package Layout
 - `src/investing_bot/scoring.py`: net executable edge formula.
@@ -22,6 +25,7 @@ This repo now includes a working Python starter focused on the highest-ROI path:
 - `src/investing_bot/archive.py`: append-only JSONL history streams.
 - `src/investing_bot/ghost_broker.py`: passive execution simulation.
 - `src/investing_bot/execution_learning.py`: learns execution priors from your archive.
+- `src/investing_bot/execution_style.py`: chooses entry style and applies request/race penalties.
 - `src/investing_bot/attribution.py`: per-trade counterfactual PnL decomposition.
 - `src/investing_bot/pipeline.py`: end-to-end plan builder.
 
@@ -40,6 +44,13 @@ net_edge = (
     - execution_penalty
 )
 ```
+
+## Archive Layout
+Archive streams are now source-separated:
+- `orders/live/*.jsonl`
+- `orders/paper/*.jsonl`
+- `orders/ghost/*.jsonl`
+- same structure for `fills`, `signals`, and `chain_snapshots`.
 
 ## Config + Example Data
 - `config/trading_profile.json`

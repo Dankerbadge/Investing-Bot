@@ -12,6 +12,9 @@ class LiquidityGate:
     min_book_depth_contracts: int = 20
     max_spread_cost: float = 0.03
     min_confidence: float = 0.55
+    reject_locked_or_crossed_quotes: bool = True
+    allow_adjusted_options: bool = False
+    allow_nonstandard_expirations: bool = False
 
 
 def evaluate_liquidity(candidate: Candidate, gate: LiquidityGate) -> tuple[bool, list[str]]:
@@ -27,5 +30,11 @@ def evaluate_liquidity(candidate: Candidate, gate: LiquidityGate) -> tuple[bool,
         reasons.append("spread_too_wide")
     if candidate.confidence < gate.min_confidence:
         reasons.append("confidence_below_min")
+    if gate.reject_locked_or_crossed_quotes and bool(candidate.metadata.get("quote_locked_or_crossed")):
+        reasons.append("locked_or_crossed_market")
+    if not gate.allow_adjusted_options and bool(candidate.metadata.get("is_adjusted_option")):
+        reasons.append("adjusted_option_excluded")
+    if not gate.allow_nonstandard_expirations and bool(candidate.metadata.get("is_nonstandard_expiration")):
+        reasons.append("nonstandard_expiration_excluded")
 
     return (len(reasons) == 0), reasons

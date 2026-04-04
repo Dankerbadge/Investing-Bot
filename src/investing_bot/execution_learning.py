@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 import json
 from pathlib import Path
 from typing import Any
@@ -35,6 +36,13 @@ def _safe_float(value: Any, default: float = 0.0) -> float:
         return default
 
 
+def _normalize_source(value: Any) -> str:
+    normalized = str(value or "").strip().lower()
+    if normalized in {"live", "paper", "ghost"}:
+        return normalized
+    return "live"
+
+
 def _percentile(sorted_values: list[float], q: float) -> float:
     if not sorted_values:
         return 0.0
@@ -43,64 +51,164 @@ def _percentile(sorted_values: list[float], q: float) -> float:
     return sorted_values[idx]
 
 
-def _bucket_key_from_row(row: dict[str, Any]) -> str:
-    explicit = str(row.get("execution_bucket") or "").strip()
-    if explicit:
-        return explicit
-    strategy = str(row.get("strategy_family") or "").strip().lower()
-    underlying = str(row.get("underlying") or "").strip().upper()
-    ticker = str(row.get("ticker") or "").strip().upper()
-    if strategy and underlying:
-        return f"{strategy}|{underlying}"
-    if strategy and ticker:
-        return f"{strategy}|{ticker}"
-    if ticker:
-        return ticker
-    return "global"
-
-
-def _bucket_key_from_candidate(candidate: Candidate) -> str:
-    explicit = str(candidate.metadata.get("execution_bucket") or "").strip()
-    if explicit:
-        return explicit
-    strategy = str(candidate.strategy_family or "").strip().lower()
-    underlying = str(candidate.underlying or "").strip().upper()
-    ticker = str(candidate.ticker or "").strip().upper()
-    if strategy and underlying:
-        return f"{strategy}|{underlying}"
-    if strategy and ticker:
-        return f"{strategy}|{ticker}"
-    if ticker:
-        return ticker
-    return "global"
-
-
-def _read_jsonl_records(stream_dir: Path) -> list[dict[str, Any]]:
-    if not stream_dir.exists() or not stream_dir.is_dir():
-        return []
+def _read_jsonl(path: Path) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
-    for path in sorted(stream_dir.glob("*.jsonl")):
-        try:
-            lines = path.read_text(encoding="utf-8").splitlines()
-        except OSError:
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return rows
+    for line in lines:
+        text = line.strip()
+        if not text:
             continue
-        for line in lines:
-            text = line.strip()
-            if not text:
-                continue
-            try:
-                payload = json.loads(text)
-            except json.JSONDecodeError:
-                continue
-            if isinstance(payload, dict):
-                rows.append(payload)
+        try:
+            payload = json.loads(text)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(payload, dict):
+            rows.append(payload)
     return rows
 
 
-def learn_execution_priors(archive_root: Path, min_observations: int = 3) -> dict[str, LearnedExecutionPrior]:
-    orders = _read_jsonl_records(archive_root / "orders")
-    fills = _read_jsonl_records(archive_root / "fills")
-    signals = _read_jsonl_records(archive_root / "signals")
+def _read_stream_records(
+    archive_root: Path,
+    stream: str,
+    allowed_sources: set[str],
+) -> list[dict[str, Any]]:
+    stream_dir = archive_root / stream
+    if not stream_dir.exists() or not stream_dir.is_dir():
+        return []
+
+    records: list[dict[str, Any]] = []
+
+    # New layout: stream/source/YYYY-MM-DD.jsonl
+    for source in sorted(allowed_sources):
+        source_dir = stream_dir / source
+        if not source_dir.exists() or not source_dir.is_dir():
+            continue
+        for path in sorted(source_dir.glob("*.jsonl")):
+            for row in _read_jsonl(path):
+                row.setdefault("data_source", source)
+                records.append(row)
+
+    # Backward-compatible layout: stream/YYYY-MM-DD.jsonl with optional data_source column.
+    for path in sorted(stream_dir.glob("*.jsonl")):
+        for row in _read_jsonl(path):
+            source = _normalize_source(row.get("data_source"))
+            if source in allowed_sources:
+                row.setdefault("data_source", source)
+                records.append(row)
+
+    return records
+
+
+def _bucket_fields(row: dict[str, Any]) -> tuple[str, str, str, str, str, str, str, str]:
+    strategy = str(row.get("strategy_family") or "unknown").strip().lower() or "unknown"
+    ticker = str(row.get("ticker") or "").strip().upper()
+
+    spread = _safe_float(row.get("spread_cost") or row.get("spread_dollars"), default=0.0)
+    if spread <= 0.01:
+        liquidity_bucket = "liq_tight"
+    elif spread <= 0.03:
+        liquidity_bucket = "liq_medium"
+    else:
+        liquidity_bucket = "liq_wide"
+
+    dte = _safe_float(row.get("dte_days"), default=-1.0)
+    if dte < 0:
+        dte_bucket = "dte_unknown"
+    elif dte <= 7:
+        dte_bucket = "dte_0_7"
+    elif dte <= 30:
+        dte_bucket = "dte_8_30"
+    else:
+        dte_bucket = "dte_31_plus"
+
+    moneyness = abs(_safe_float(row.get("moneyness") or row.get("delta_distance"), default=0.0))
+    if moneyness <= 0.05:
+        moneyness_bucket = "money_atm"
+    elif moneyness <= 0.2:
+        moneyness_bucket = "money_near"
+    else:
+        moneyness_bucket = "money_far"
+
+    captured = str(row.get("captured_at") or row.get("recorded_at") or "").strip()
+    hour_bucket = "tod_unknown"
+    if captured:
+        try:
+            hour = datetime.fromisoformat(captured.replace("Z", "+00:00")).hour
+            if hour < 11:
+                hour_bucket = "tod_open"
+            elif hour < 14:
+                hour_bucket = "tod_mid"
+            else:
+                hour_bucket = "tod_late"
+        except ValueError:
+            pass
+
+    event_bucket = "event" if bool(row.get("is_event") or row.get("event_day")) else "non_event"
+    style_bucket = str(row.get("execution_style") or row.get("order_style") or "unknown").strip().lower() or "unknown"
+
+    return strategy, ticker, liquidity_bucket, dte_bucket, moneyness_bucket, hour_bucket, event_bucket, style_bucket
+
+
+def _bucket_key_candidates(row: dict[str, Any]) -> list[str]:
+    explicit = str(row.get("execution_bucket") or "").strip()
+    if explicit:
+        return [explicit, "global"]
+
+    strategy, ticker, liq, dte, money, tod, event_bucket, style = _bucket_fields(row)
+    keys = [
+        f"{strategy}|{liq}|{dte}|{money}|{tod}|{event_bucket}|{style}",
+        f"{strategy}|{liq}|{event_bucket}",
+        f"{strategy}|{event_bucket}",
+    ]
+    if ticker:
+        keys.append(ticker)
+    keys.append("global")
+    # Preserve order and uniqueness.
+    deduped: list[str] = []
+    for key in keys:
+        if key not in deduped:
+            deduped.append(key)
+    return deduped
+
+
+def _bucket_key_candidates_for_candidate(candidate: Candidate) -> list[str]:
+    explicit = str(candidate.metadata.get("execution_bucket") or "").strip()
+    if explicit:
+        return [explicit, "global"]
+
+    synthetic_row = {
+        "strategy_family": candidate.strategy_family,
+        "ticker": candidate.ticker,
+        "spread_cost": candidate.spread_cost,
+        "dte_days": candidate.metadata.get("dte_days"),
+        "moneyness": candidate.metadata.get("moneyness"),
+        "captured_at": candidate.metadata.get("captured_at"),
+        "is_event": candidate.metadata.get("is_event"),
+        "execution_style": candidate.metadata.get("execution_style"),
+    }
+    return _bucket_key_candidates(synthetic_row)
+
+
+def _blend(specific: float, parent: float, observations: int, half_life: float = 25.0) -> float:
+    weight = max(0.0, min(1.0, observations / (observations + half_life)))
+    return weight * specific + (1.0 - weight) * parent
+
+
+def learn_execution_priors(
+    archive_root: Path,
+    min_observations: int = 3,
+    allowed_sources: tuple[str, ...] = ("live",),
+) -> dict[str, LearnedExecutionPrior]:
+    allowed = {_normalize_source(value) for value in allowed_sources if str(value).strip()}
+    if not allowed:
+        allowed = {"live"}
+
+    orders = _read_stream_records(archive_root, "orders", allowed)
+    fills = _read_stream_records(archive_root, "fills", allowed)
+    signals = _read_stream_records(archive_root, "signals", allowed)
 
     attempted_by_bucket: dict[str, float] = {}
     filled_by_bucket: dict[str, float] = {}
@@ -109,20 +217,15 @@ def learn_execution_priors(archive_root: Path, min_observations: int = 3) -> dic
     model_error_by_bucket: dict[str, list[float]] = {}
 
     for row in orders:
-        key = _bucket_key_from_row(row)
+        keys = _bucket_key_candidates(row)
         qty = max(1.0, _safe_float(row.get("order_quantity") or row.get("requested_quantity") or 1.0, default=1.0))
-        attempted_by_bucket[key] = attempted_by_bucket.get(key, 0.0) + qty
+        for key in keys:
+            attempted_by_bucket[key] = attempted_by_bucket.get(key, 0.0) + qty
 
     for row in fills:
-        key = _bucket_key_from_row(row)
+        keys = _bucket_key_candidates(row)
         fill_qty = max(0.0, _safe_float(row.get("fill_quantity") or row.get("filled_quantity") or 0.0, default=0.0))
-        if fill_qty > 0:
-            filled_by_bucket[key] = filled_by_bucket.get(key, 0.0) + fill_qty
-
         slippage = abs(_safe_float(row.get("slippage_dollars") or row.get("fill_vs_mid_dollars"), default=0.0))
-        if slippage > 0:
-            slippage_by_bucket.setdefault(key, []).append(slippage)
-
         decay = abs(
             _safe_float(
                 row.get("post_fill_alpha_decay")
@@ -131,15 +234,23 @@ def learn_execution_priors(archive_root: Path, min_observations: int = 3) -> dic
                 default=0.0,
             )
         )
-        if decay > 0:
-            alpha_decay_by_bucket.setdefault(key, []).append(decay)
+
+        for key in keys:
+            if fill_qty > 0:
+                filled_by_bucket[key] = filled_by_bucket.get(key, 0.0) + fill_qty
+            if slippage > 0:
+                slippage_by_bucket.setdefault(key, []).append(slippage)
+            if decay > 0:
+                alpha_decay_by_bucket.setdefault(key, []).append(decay)
 
     for row in signals:
-        key = _bucket_key_from_row(row)
+        keys = _bucket_key_candidates(row)
         predicted = _safe_float(row.get("predicted_net_edge") or row.get("expected_net_edge"), default=0.0)
         realized = _safe_float(row.get("realized_net_edge"), default=0.0)
         if predicted != 0.0 or realized != 0.0:
-            model_error_by_bucket.setdefault(key, []).append(abs(predicted - realized))
+            err = abs(predicted - realized)
+            for key in keys:
+                model_error_by_bucket.setdefault(key, []).append(err)
 
     all_keys = (
         set(attempted_by_bucket)
@@ -157,7 +268,6 @@ def learn_execution_priors(archive_root: Path, min_observations: int = 3) -> dic
         if observations < min_observations:
             continue
 
-        # Laplace-smoothed fill rate keeps sparse buckets from overreacting.
         fill_probability = (fills_qty + 1.0) / (attempts + 2.0) if attempts > 0 else 0.5
 
         slippages = sorted(slippage_by_bucket.get(key, []))
@@ -192,20 +302,65 @@ def adjustments_for_candidate(
     if not priors:
         return ExecutionAdjustments()
 
-    key = _bucket_key_from_candidate(candidate)
-    prior = priors.get(key) or priors.get(str(candidate.ticker or "").strip().upper()) or priors.get("global")
-    if prior is None:
+    keys = _bucket_key_candidates_for_candidate(candidate)
+    selected = next((priors.get(key) for key in keys if key in priors), None)
+    if selected is None:
         return ExecutionAdjustments()
 
-    # Shrink learning impact when sample is small.
-    blend = min(0.8, prior.observations / (prior.observations + 20.0))
-    blended_fill_probability = (1.0 - blend) * float(candidate.fill_probability) + blend * prior.expected_fill_probability
+    # Hierarchical shrinkage: back off to broader/global priors when sparse.
+    parent = None
+    for key in keys[1:]:
+        if key in priors:
+            parent = priors[key]
+            break
+
+    expected_fill_probability = selected.expected_fill_probability
+    slippage_p95_penalty = selected.slippage_p95_penalty
+    alpha_decay_penalty = selected.post_fill_alpha_decay_penalty
+    uncertainty_penalty = selected.uncertainty_penalty
+    execution_penalty = selected.execution_penalty
+    model_error_score = selected.model_error_score
+
+    if parent is not None and parent.bucket_key != selected.bucket_key:
+        expected_fill_probability = _blend(
+            selected.expected_fill_probability,
+            parent.expected_fill_probability,
+            selected.observations,
+        )
+        slippage_p95_penalty = _blend(
+            selected.slippage_p95_penalty,
+            parent.slippage_p95_penalty,
+            selected.observations,
+        )
+        alpha_decay_penalty = _blend(
+            selected.post_fill_alpha_decay_penalty,
+            parent.post_fill_alpha_decay_penalty,
+            selected.observations,
+        )
+        uncertainty_penalty = _blend(
+            selected.uncertainty_penalty,
+            parent.uncertainty_penalty,
+            selected.observations,
+        )
+        execution_penalty = _blend(
+            selected.execution_penalty,
+            parent.execution_penalty,
+            selected.observations,
+        )
+        model_error_score = _blend(
+            selected.model_error_score,
+            parent.model_error_score,
+            selected.observations,
+        )
+
+    blend = min(0.8, selected.observations / (selected.observations + 20.0))
+    blended_fill_probability = (1.0 - blend) * float(candidate.fill_probability) + blend * expected_fill_probability
 
     return ExecutionAdjustments(
         expected_fill_probability=blended_fill_probability,
-        slippage_p95_penalty=prior.slippage_p95_penalty,
-        post_fill_alpha_decay_penalty=prior.post_fill_alpha_decay_penalty,
-        uncertainty_penalty=prior.uncertainty_penalty,
-        execution_penalty=prior.execution_penalty,
-        model_error_score=prior.model_error_score,
+        slippage_p95_penalty=max(0.0, slippage_p95_penalty),
+        post_fill_alpha_decay_penalty=max(0.0, alpha_decay_penalty),
+        uncertainty_penalty=max(0.0, uncertainty_penalty),
+        execution_penalty=max(0.0, execution_penalty),
+        model_error_score=min(1.0, max(0.0, model_error_score)),
     )

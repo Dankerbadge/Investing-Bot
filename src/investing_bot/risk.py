@@ -14,6 +14,7 @@ class ConcentrationLimits:
     max_single_position_fraction: float = 0.10
     max_gross_notional_fraction: float = 0.35
     max_shock_loss_fraction: float = 0.20
+    shock_scenarios: tuple[str, ...] = ("gap_down", "vol_crush", "vol_expansion", "spread_blowout", "stale_quote")
 
 
 def select_concentrated_portfolio(
@@ -27,7 +28,7 @@ def select_concentrated_portfolio(
 
     sorted_candidates = sorted(
         scored_candidates,
-        key=lambda item: (item.net_edge, item.kelly_used, item.candidate.confidence),
+        key=lambda item: (item.alpha_density, item.net_edge, item.kelly_used, item.candidate.confidence),
         reverse=True,
     )
 
@@ -40,6 +41,7 @@ def select_concentrated_portfolio(
     strategy_counts: dict[str, int] = {}
     gross_notional = 0.0
     worst_case_loss_notional = 0.0
+    shock_scenario_notional: dict[str, float] = {scenario: 0.0 for scenario in limits.shock_scenarios}
 
     for item in sorted_candidates:
         if len(selected) >= limits.max_open_positions:
@@ -63,6 +65,18 @@ def select_concentrated_portfolio(
         incremental_worst_case = target * max(1.0, float(candidate.loss_multiple))
         if (worst_case_loss_notional + incremental_worst_case) > (bankroll * limits.max_shock_loss_fraction):
             continue
+        scenario_weights = candidate.metadata.get("shock_loss_weights") or {}
+        if not isinstance(scenario_weights, dict):
+            scenario_weights = {}
+        scenario_blocked = False
+        for scenario in limits.shock_scenarios:
+            weight = float(scenario_weights.get(scenario, candidate.loss_multiple))
+            proposed = shock_scenario_notional.get(scenario, 0.0) + target * max(0.0, weight)
+            if proposed > bankroll * limits.max_shock_loss_fraction:
+                scenario_blocked = True
+                break
+        if scenario_blocked:
+            continue
 
         selected.append(
             SelectedTrade(
@@ -76,6 +90,8 @@ def select_concentrated_portfolio(
                 target_notional=round(target, 2),
                 confidence=round(candidate.confidence, 6),
                 raw_net_edge=round(item.raw_net_edge, 6),
+                alpha_density=round(item.alpha_density, 10),
+                execution_style=item.execution_style,
             )
         )
 
@@ -84,5 +100,8 @@ def select_concentrated_portfolio(
         strategy_counts[candidate.strategy_family] = strategy_counts.get(candidate.strategy_family, 0) + 1
         gross_notional += target
         worst_case_loss_notional += incremental_worst_case
+        for scenario in limits.shock_scenarios:
+            weight = float(scenario_weights.get(scenario, candidate.loss_multiple))
+            shock_scenario_notional[scenario] = shock_scenario_notional.get(scenario, 0.0) + target * max(0.0, weight)
 
     return selected
