@@ -1,4 +1,13 @@
 from .alerts import Alert, AlertThresholds, generate_alerts
+from .alpha_families import (
+    filing_vol_family,
+    generate_filing_vol_signals,
+    generate_open_drive_signals,
+    generate_post_event_iv_signals,
+    open_drive_family,
+    post_event_iv_family,
+)
+from .alpha_registry import AlphaFamilySpec, AlphaRegistry, AlphaSignal, build_default_alpha_registry
 from .allocator import (
     AllocatedTrade,
     AllocationConstraints,
@@ -21,6 +30,7 @@ from .calibration import (
 )
 from .capabilities import CapabilityRecord, CapabilityRegistry, action_is_allowed
 from .capital_efficiency import CapitalEfficiency, compute_capital_efficiency, rank_by_capital_efficiency
+from .campaign_manager import AlphaCampaign, CampaignDecision, CampaignManager, allocate_probe_budget
 from .chaos_harness import ChaosRunResult, ChaosScenario, ChaosScenarioResult, default_fault_scenarios, run_chaos_suite
 from .champion_challenger import (
     ChampionDecision,
@@ -57,6 +67,7 @@ from .execution_style import ExecutionStyleDecision, choose_execution_style
 from .experiment_registry import ExperimentRegistry, stable_hash, stamp_decision_context
 from .exit_policy import ExitDecision, choose_exit_action
 from .fault_injection import inject_delayed_quotes, inject_order_change_race, inject_request_burst, inject_stream_gap
+from .feature_store import FeatureSnapshot, FeatureStore, build_feature_payload
 from .gating import LiquidityGate, evaluate_liquidity
 from .instrument_registry import InstrumentProfile, InstrumentRegistry
 from .latency import LatencyProfile, build_latency_profile, estimate_latency_penalty, latency_kill_switch
@@ -104,6 +115,24 @@ from .sizing import (
 )
 from .stream_manager import StreamAction, StreamSubscriptionManager
 from .telemetry import TelemetryPoint, TelemetrySummary, aggregate_telemetry
+from .sequential_tests import (
+    SequentialTestState,
+    lower_confidence_bound,
+    posterior_mean,
+    posterior_variance,
+    should_kill_alpha,
+    should_promote_alpha,
+    success_rate,
+    update_state,
+)
+from .universe_builder import (
+    UniverseConstraints,
+    UniverseMember,
+    build_alpha_universe,
+    build_tradable_universe,
+    evaluate_universe_member,
+    rows_for_alpha_family,
+)
 
 __all__ = [
     "ActionPolicyStats",
@@ -112,12 +141,18 @@ __all__ = [
     "AllocatedTrade",
     "AllocationConstraints",
     "AllocationResult",
+    "AlphaCampaign",
+    "AlphaFamilySpec",
+    "AlphaRegistry",
+    "AlphaSignal",
     "ArchiveWriter",
     "BrokerTruthSnapshot",
     "BucketFact",
     "BucketHealth",
     "BucketHealthThresholds",
     "BucketPromotionMetrics",
+    "CampaignDecision",
+    "CampaignManager",
     "Candidate",
     "CapabilityRecord",
     "CapabilityRegistry",
@@ -137,6 +172,8 @@ __all__ = [
     "ExecutionStyleDecision",
     "ExitDecision",
     "ExperimentRegistry",
+    "FeatureSnapshot",
+    "FeatureStore",
     "InstrumentProfile",
     "InstrumentRegistry",
     "LatencyProfile",
@@ -164,23 +201,31 @@ __all__ = [
     "ReliabilityBin",
     "RuinGuardDecision",
     "ScoredCandidate",
+    "SequentialTestState",
     "SelectedTrade",
     "StreamAction",
     "StreamSubscriptionManager",
     "TelemetryPoint",
     "TelemetrySummary",
     "TradeFact",
+    "UniverseConstraints",
+    "UniverseMember",
     "action_is_allowed",
     "adjustments_for_candidate",
     "aggregate_telemetry",
     "apply_greeks_overlay",
+    "allocate_probe_budget",
     "assignment_risk_score",
     "audit_execution_path",
     "brier_score",
+    "build_alpha_universe",
+    "build_default_alpha_registry",
     "build_daily_rollup",
+    "build_feature_payload",
     "build_latency_profile",
     "build_ops_dashboard",
     "build_trade_plan",
+    "build_tradable_universe",
     "choose_entry_action",
     "choose_execution_style",
     "choose_exit_action",
@@ -208,9 +253,14 @@ __all__ = [
     "evaluate_challenger_ips",
     "evaluate_liquidity",
     "evaluate_stage_transition",
+    "evaluate_universe_member",
+    "filing_vol_family",
     "fractional_kelly_fraction",
     "full_kelly_fraction",
     "generate_alerts",
+    "generate_filing_vol_signals",
+    "generate_open_drive_signals",
+    "generate_post_event_iv_signals",
     "infer_corporate_action_context",
     "infer_event_context",
     "infer_regime_context",
@@ -220,14 +270,19 @@ __all__ = [
     "inject_stream_gap",
     "latency_kill_switch",
     "learn_execution_priors",
+    "lower_confidence_bound",
     "log_propensity",
     "materialize_bucket_facts",
     "materialize_policy_facts",
     "materialize_portfolio_facts",
     "materialize_trade_facts",
     "notional_from_fraction",
+    "open_drive_family",
     "optimize_basket",
     "persist_daily_rollup",
+    "post_event_iv_family",
+    "posterior_mean",
+    "posterior_variance",
     "promotion_report",
     "quantile_pinball_loss",
     "rank_by_capital_efficiency",
@@ -242,10 +297,14 @@ __all__ = [
     "require_broker_parity_before_entries",
     "resolve_order_status",
     "run_chaos_suite",
+    "rows_for_alpha_family",
     "score_incremental_capital_efficiency",
     "select_champion_policy",
     "select_concentrated_portfolio",
+    "should_kill_alpha",
     "should_pause_trading",
+    "should_promote_alpha",
+    "success_rate",
     "stable_hash",
     "stage_capital_multiplier",
     "stamp_decision_context",
@@ -254,6 +313,7 @@ __all__ = [
     "summarize_fill_calibration",
     "update_entry_policy",
     "update_online_policy",
+    "update_state",
     "verify_order_spec",
     "walk_limit_api_verified",
 ]

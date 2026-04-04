@@ -40,6 +40,9 @@ This repo now includes a working Python starter focused on the highest-ROI path:
 33. Daily rollup and bucket-health materialization (`daily_rollup.py` + `bucket_health.py`) for durable evidence.
 34. Chaos and fault-injection harness (`chaos_harness.py` + `fault_injection.py`) for restart/reconnect failure discipline.
 35. Order-spec verification and execution audit (`order_spec_verifier.py` + `execution_audit.py`) for executable-style governance.
+36. Alpha registry with pluggable alpha-family modules (`alpha_registry.py` + `alpha_families/`).
+37. Campaign manager + sequential promotion/kill testing (`campaign_manager.py` + `sequential_tests.py`).
+38. Point-in-time feature caching and tradable-universe construction (`feature_store.py` + `universe_builder.py`).
 
 ## Package Layout
 - `src/investing_bot/scoring.py`: net executable edge formula.
@@ -86,6 +89,12 @@ This repo now includes a working Python starter focused on the highest-ROI path:
 - `src/investing_bot/chaos_harness.py`: scenario runner for validating failure behavior.
 - `src/investing_bot/order_spec_verifier.py`: intended-vs-broker order spec normalization and mismatch checks.
 - `src/investing_bot/execution_audit.py`: lifecycle-level execution audits and summary metrics.
+- `src/investing_bot/alpha_registry.py`: alpha family specs, signal registration, and candidate conversion.
+- `src/investing_bot/alpha_families/`: built-in alpha families (`filing_vol`, `post_event_iv`, `open_drive`).
+- `src/investing_bot/campaign_manager.py`: probe-budget allocation and stage decisions for alpha campaigns.
+- `src/investing_bot/sequential_tests.py`: lower/upper confidence-bound utilities for promote/kill logic.
+- `src/investing_bot/feature_store.py`: point-in-time feature snapshots and merged feature payload helpers.
+- `src/investing_bot/universe_builder.py`: liquidity/instrument-aware universe filtering and family-ready row mapping.
 
 ## Core Score
 ```python
