@@ -30,6 +30,10 @@ This repo now includes a working Python starter focused on the highest-ROI path:
 23. Event/regime context integration (`SEC` filing windows + `FRED/Cboe` regime tags) feeding policy, promotion, and deployment controls.
 24. Broker-confirmed portfolio truth layer (`ledger.py` + `portfolio_state.py`) for realized/unrealized PnL, exposures, and max-loss snapshots.
 25. Experiment lineage + deterministic replay (`experiment_registry.py` + `replay.py`) for policy/versioned decision auditing.
+26. Operational telemetry + alerting + dashboard assembly (`telemetry.py` + `alerts.py` + `ops_dashboard.py`).
+27. Corporate-action and instrument hygiene gates (`corp_actions.py` + `instrument_registry.py`) integrated into trade gating.
+28. Champion/challenger governance and conservative online policy primitives (`champion_challenger.py` + `online_policy.py`).
+29. Portfolio capital-efficiency scoring helpers and ruin guard controls (`capital_efficiency.py` + `ruin_guard.py`).
 
 ## Package Layout
 - `src/investing_bot/scoring.py`: net executable edge formula.
@@ -58,6 +62,15 @@ This repo now includes a working Python starter focused on the highest-ROI path:
 - `src/investing_bot/portfolio_state.py`: canonical portfolio truth from ledger + quotes + Greeks.
 - `src/investing_bot/experiment_registry.py`: policy/version/config/feature stamping for decision lineage.
 - `src/investing_bot/replay.py`: deterministic replay over archived streams for offline validation.
+- `src/investing_bot/telemetry.py`: telemetry aggregation for stream/budget/calibration drift metrics.
+- `src/investing_bot/alerts.py`: threshold-driven operational alert generation.
+- `src/investing_bot/ops_dashboard.py`: normalized operations dashboard payloads.
+- `src/investing_bot/corp_actions.py`: adjusted/non-standard/assignment-risk context and hard-block helpers.
+- `src/investing_bot/instrument_registry.py`: canonical instrument profiles and tradability checks.
+- `src/investing_bot/champion_challenger.py`: replay/shadow/probe/live policy promotion decisions.
+- `src/investing_bot/online_policy.py`: broker-confirmed online action learning primitives.
+- `src/investing_bot/capital_efficiency.py`: alpha-density and capital-efficiency metrics.
+- `src/investing_bot/ruin_guard.py`: drawdown/volatility/streak-based Kelly de-risking controls.
 
 ## Core Score
 ```python

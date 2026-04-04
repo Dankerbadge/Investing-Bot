@@ -1,5 +1,6 @@
 from investing_bot.gating import LiquidityGate
 from investing_bot.execution_learning import LearnedExecutionPrior
+from investing_bot.instrument_registry import InstrumentProfile, InstrumentRegistry
 from investing_bot.models import Candidate
 from investing_bot.pipeline import build_trade_plan
 from investing_bot.policy import ActionPolicyStats
@@ -245,3 +246,52 @@ def test_pipeline_latency_kill_switch_blocks_entry():
     assert row["kelly_used"] == 0.0
     assert row["latency_penalty"] > 0.0
     assert "latency_quote_age_exceeded" in row["gate_reasons"]
+
+
+def test_pipeline_instrument_registry_blocks_unapproved_contract():
+    candidate = _candidate("SPY-BLOCKED", "SPY", "event-1", 0.08)
+    registry = InstrumentRegistry()
+    registry.register(
+        InstrumentProfile(
+            symbol="SPY-BLOCKED",
+            underlying="SPY",
+            expiration_type="weekly",
+            adjusted_option=False,
+            defined_risk=True,
+        )
+    )
+
+    result = build_trade_plan(
+        candidates=[candidate],
+        bankroll=10000,
+        gate=LiquidityGate(),
+        limits=ConcentrationLimits(max_open_positions=1, max_per_underlying=1, max_per_event=1),
+        instrument_registry=registry,
+    )
+    row = result["scored"][0]
+    assert row["kelly_used"] == 0.0
+    assert "non_standard_expiration_blocked" in row["gate_reasons"]
+
+
+def test_pipeline_corporate_action_hard_block_is_enforced():
+    candidate = _candidate("SPY-ASSIGN", "SPY", "event-1", 0.08)
+    candidate.metadata.update(
+        {
+            "side": "sell",
+            "is_american": True,
+            "dte": 1,
+            "ex_dividend_days": 0,
+            "intrinsic_value": 1.0,
+            "extrinsic_value": 0.01,
+        }
+    )
+
+    result = build_trade_plan(
+        candidates=[candidate],
+        bankroll=10000,
+        gate=LiquidityGate(),
+        limits=ConcentrationLimits(max_open_positions=1, max_per_underlying=1, max_per_event=1),
+    )
+    row = result["scored"][0]
+    assert row["kelly_used"] == 0.0
+    assert "assignment_risk_hard_limit" in row["gate_reasons"]

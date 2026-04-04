@@ -3,11 +3,19 @@ from __future__ import annotations
 from dataclasses import asdict
 from typing import Any
 
+from .capital_efficiency import compute_capital_efficiency
+from .corp_actions import (
+    corporate_action_hard_block,
+    corporate_action_penalty,
+    corporate_action_reasons,
+    infer_corporate_action_context,
+)
 from .deployment_control import compute_deployment_decision
 from .event_context import event_context_penalty, infer_event_context
 from .execution_learning import LearnedExecutionPrior, adjustments_for_candidate
 from .execution_style import choose_execution_style
 from .gating import LiquidityGate, evaluate_liquidity
+from .instrument_registry import InstrumentRegistry
 from .latency import build_latency_profile, estimate_latency_penalty, latency_kill_switch
 from .models import Candidate, ScoredCandidate
 from .policy import ActionPolicyStats, choose_entry_action
@@ -15,6 +23,7 @@ from .promotion import stage_capital_multiplier
 from .regime import infer_regime_context, regime_penalty
 from .reconciliation import BrokerTruthSnapshot
 from .risk import ConcentrationLimits, select_concentrated_portfolio
+from .ruin_guard import compute_ruin_guard
 from .scoring import compute_edge_breakdown
 from .sizing import (
     dynamic_fractional_kelly_fraction,
@@ -46,6 +55,10 @@ def build_trade_plan(
     recent_order_requests_per_minute: float = 0.0,
     order_request_budget_per_minute: float = 120.0,
     broker_truth_snapshot: BrokerTruthSnapshot | None = None,
+    instrument_registry: InstrumentRegistry | None = None,
+    allow_adjusted_options: bool = False,
+    allow_non_standard_expirations: bool = False,
+    allow_undefined_risk: bool = False,
     require_broker_truth_clean: bool = True,
     max_quote_age_ms: float = 3000.0,
     max_decision_ms: float = 1200.0,
@@ -125,6 +138,7 @@ def build_trade_plan(
         metadata = candidate.metadata if isinstance(candidate.metadata, dict) else {}
         broker_reasons: list[str] = []
         policy_reasons: list[str] = []
+        governance_reasons: list[str] = []
         hard_block = False
         deployment_stage = _normalize_stage(str(metadata.get("deployment_stage") or "scaled_1"))
         stream_gap_seconds = float(metadata.get("stream_gap_seconds") or 0.0)
@@ -155,7 +169,15 @@ def build_trade_plan(
             request_budget_breached=bool(broker_truth_snapshot.request_budget_breached) if broker_truth_snapshot else False,
             duplicate_order_detected=duplicate_order_detected,
         )
-        effective_capital_multiplier = deployment_decision.capital_multiplier
+        ruin_guard = compute_ruin_guard(
+            drawdown_fraction=drawdown_fraction,
+            daily_pnl_fraction=daily_pnl_fraction,
+            realized_volatility=float(metadata.get("realized_volatility") or 0.0),
+            rolling_loss_streak=int(metadata.get("rolling_loss_streak") or 0),
+            stage=deployment_stage,
+        )
+        governance_reasons.extend(list(ruin_guard.reasons))
+        effective_capital_multiplier = deployment_decision.capital_multiplier * ruin_guard.kelly_multiplier
         stage_multiplier = stage_capital_multiplier(deployment_stage)
 
         style_decision = choose_execution_style(
@@ -214,6 +236,25 @@ def build_trade_plan(
             0.0,
             float(metadata.get("pre_trade_risk_penalty") or metadata.get("risk_penalty") or 0.0),
         )
+        corp_context = infer_corporate_action_context({**metadata, "side": candidate.side})
+        risk_penalty += corporate_action_penalty(corp_context)
+        governance_reasons.extend(list(corporate_action_reasons(corp_context)))
+        if corporate_action_hard_block(corp_context):
+            hard_block = True
+            if "assignment_risk_hard_limit" not in governance_reasons:
+                governance_reasons.append("assignment_risk_hard_limit")
+
+        if instrument_registry is not None:
+            allowed, instrument_reasons = instrument_registry.evaluate_trade(
+                symbol=candidate.ticker,
+                allow_adjusted=allow_adjusted_options,
+                allow_non_standard=allow_non_standard_expirations,
+                allow_undefined_risk=allow_undefined_risk,
+            )
+            if not allowed:
+                hard_block = True
+                governance_reasons.extend(list(instrument_reasons))
+
         risk_penalty += latency_penalty + event_penalty + regime_penalty_value
 
         if require_broker_truth_clean and broker_truth_snapshot is not None:
@@ -237,7 +278,7 @@ def build_trade_plan(
                 hard_block = True
 
         risk_adjusted_edge = style_adjusted_edge - risk_penalty
-        if hard_block or latency_blocked or deployment_decision.paused:
+        if hard_block or latency_blocked or deployment_decision.paused or ruin_guard.paused:
             risk_adjusted_edge = min(0.0, risk_adjusted_edge)
 
         kelly_full = full_kelly_fraction(
@@ -274,6 +315,7 @@ def build_trade_plan(
             or hard_block
             or latency_blocked
             or deployment_decision.paused
+            or ruin_guard.paused
             or policy_action == "skip"
         ):
             kelly_used = 0.0
@@ -305,14 +347,19 @@ def build_trade_plan(
 
         expected_holding_minutes = float(candidate.metadata.get("expected_holding_minutes") or 60.0)
         expected_holding_minutes = max(1.0, expected_holding_minutes)
-        capital_minutes = max(1.0, target_notional * expected_holding_minutes)
-        alpha_density = (
-            max(0.0, risk_adjusted_edge) * max(0.0, expected_fill_probability) / capital_minutes
+        efficiency = compute_capital_efficiency(
+            expected_net_pnl=max(0.0, risk_adjusted_edge) * max(0.0, expected_fill_probability),
+            notional=target_notional,
+            expected_holding_minutes=expected_holding_minutes,
+            incremental_max_loss=target_notional * max(1.0, float(candidate.loss_multiple)),
+            incremental_shock_loss=target_notional * max(1.0, float(candidate.loss_multiple)),
         )
+        alpha_density = efficiency.alpha_density
 
         gate_reasons = list(reasons)
         gate_reasons.extend(broker_reasons)
         gate_reasons.extend(policy_reasons)
+        gate_reasons.extend(governance_reasons)
         gate_reasons.extend(latency_reasons)
         gate_reasons.extend(list(deployment_decision.reasons))
         if live_cap_penalty > 0:
@@ -333,6 +380,8 @@ def build_trade_plan(
             gate_reasons.append("hard_risk_block")
         if deployment_decision.paused:
             gate_reasons.append("deployment_paused")
+        if ruin_guard.paused:
+            gate_reasons.append("ruin_guard_paused")
         if effective_capital_multiplier <= 0.0:
             gate_reasons.append("drift_guard_paused")
 
