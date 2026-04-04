@@ -37,6 +37,9 @@ This repo now includes a working Python starter focused on the highest-ROI path:
 30. Recovery/bootstrap parity controls (`recovery.py`) to block entries until broker and local state reconcile.
 31. Basket allocation + Greeks overlay (`allocator.py`) for portfolio-level capital deployment.
 32. Off-policy evaluation (`off_policy_eval.py`) with IPS/DR estimators for safer challenger promotion.
+33. Daily rollup and bucket-health materialization (`daily_rollup.py` + `bucket_health.py`) for durable evidence.
+34. Chaos and fault-injection harness (`chaos_harness.py` + `fault_injection.py`) for restart/reconnect failure discipline.
+35. Order-spec verification and execution audit (`order_spec_verifier.py` + `execution_audit.py`) for executable-style governance.
 
 ## Package Layout
 - `src/investing_bot/scoring.py`: net executable edge formula.
@@ -77,6 +80,12 @@ This repo now includes a working Python starter focused on the highest-ROI path:
 - `src/investing_bot/recovery.py`: restart/reconnect parity checks and broker-truth recovery gating.
 - `src/investing_bot/allocator.py`: constrained basket optimizer and net-Greeks overlay helpers.
 - `src/investing_bot/off_policy_eval.py`: propensity logging plus IPS/DR challenger evaluation.
+- `src/investing_bot/daily_rollup.py`: durable daily trade/bucket/policy/portfolio materialization.
+- `src/investing_bot/bucket_health.py`: bucket scoring and capital multiplier decisions from rollups + telemetry.
+- `src/investing_bot/fault_injection.py`: deterministic stream/order fault injectors.
+- `src/investing_bot/chaos_harness.py`: scenario runner for validating failure behavior.
+- `src/investing_bot/order_spec_verifier.py`: intended-vs-broker order spec normalization and mismatch checks.
+- `src/investing_bot/execution_audit.py`: lifecycle-level execution audits and summary metrics.
 
 ## Core Score
 ```python
