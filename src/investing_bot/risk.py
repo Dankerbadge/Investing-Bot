@@ -10,8 +10,10 @@ class ConcentrationLimits:
     max_open_positions: int = 3
     max_per_underlying: int = 1
     max_per_event: int = 1
+    max_per_strategy_family: int = 2
     max_single_position_fraction: float = 0.10
     max_gross_notional_fraction: float = 0.35
+    max_shock_loss_fraction: float = 0.20
 
 
 def select_concentrated_portfolio(
@@ -35,7 +37,9 @@ def select_concentrated_portfolio(
     selected: list[SelectedTrade] = []
     underlying_counts: dict[str, int] = {}
     event_counts: dict[str, int] = {}
+    strategy_counts: dict[str, int] = {}
     gross_notional = 0.0
+    worst_case_loss_notional = 0.0
 
     for item in sorted_candidates:
         if len(selected) >= limits.max_open_positions:
@@ -48,11 +52,16 @@ def select_concentrated_portfolio(
             continue
         if event_counts.get(candidate.event_key, 0) >= limits.max_per_event:
             continue
+        if strategy_counts.get(candidate.strategy_family, 0) >= limits.max_per_strategy_family:
+            continue
 
         target = min(item.target_notional, max_single_notional)
         if target <= 0:
             continue
         if gross_notional + target > max_gross_notional:
+            continue
+        incremental_worst_case = target * max(1.0, float(candidate.loss_multiple))
+        if (worst_case_loss_notional + incremental_worst_case) > (bankroll * limits.max_shock_loss_fraction):
             continue
 
         selected.append(
@@ -66,11 +75,14 @@ def select_concentrated_portfolio(
                 kelly_used=round(item.kelly_used, 6),
                 target_notional=round(target, 2),
                 confidence=round(candidate.confidence, 6),
+                raw_net_edge=round(item.raw_net_edge, 6),
             )
         )
 
         underlying_counts[candidate.underlying] = underlying_counts.get(candidate.underlying, 0) + 1
         event_counts[candidate.event_key] = event_counts.get(candidate.event_key, 0) + 1
+        strategy_counts[candidate.strategy_family] = strategy_counts.get(candidate.strategy_family, 0) + 1
         gross_notional += target
+        worst_case_loss_notional += incremental_worst_case
 
     return selected

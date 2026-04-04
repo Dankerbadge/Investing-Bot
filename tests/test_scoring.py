@@ -1,7 +1,11 @@
 from investing_bot.gating import LiquidityGate, evaluate_liquidity
 from investing_bot.models import Candidate
-from investing_bot.scoring import compute_net_executable_edge
-from investing_bot.sizing import fractional_kelly_fraction, full_kelly_fraction
+from investing_bot.scoring import ExecutionAdjustments, compute_net_executable_edge
+from investing_bot.sizing import (
+    dynamic_fractional_kelly_fraction,
+    fractional_kelly_fraction,
+    full_kelly_fraction,
+)
 
 
 def _candidate(**overrides):
@@ -50,3 +54,42 @@ def test_liquidity_gate_fails_stale_quote_and_spread():
     assert passed is False
     assert "quote_stale" in reasons
     assert "spread_too_wide" in reasons
+
+
+def test_adjusted_edge_haircut_reduces_edge():
+    candidate = _candidate()
+    raw = compute_net_executable_edge(candidate)
+    adjusted = compute_net_executable_edge(
+        candidate,
+        ExecutionAdjustments(
+            slippage_p95_penalty=0.002,
+            post_fill_alpha_decay_penalty=0.001,
+            uncertainty_penalty=0.001,
+        ),
+    )
+    assert adjusted < raw
+
+
+def test_dynamic_kelly_scales_down_in_bad_regime():
+    full = full_kelly_fraction(win_probability=0.60, payoff_multiple=1.0, loss_multiple=1.0)
+    baseline = dynamic_fractional_kelly_fraction(
+        kelly_full=full,
+        base_kelly_fraction=0.25,
+        confidence=0.9,
+        drawdown_fraction=0.0,
+        model_error_score=0.0,
+        spread_regime_penalty=0.0,
+        slippage_penalty=0.0,
+        max_fraction=0.10,
+    )
+    stressed = dynamic_fractional_kelly_fraction(
+        kelly_full=full,
+        base_kelly_fraction=0.25,
+        confidence=0.5,
+        drawdown_fraction=0.2,
+        model_error_score=0.4,
+        spread_regime_penalty=0.3,
+        slippage_penalty=0.2,
+        max_fraction=0.10,
+    )
+    assert stressed < baseline

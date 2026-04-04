@@ -37,6 +37,13 @@ class ScoredCandidate:
     kelly_full: float
     kelly_used: float
     target_notional: float
+    raw_net_edge: float = 0.0
+    expected_fill_probability: float = 0.0
+    slippage_p95_penalty: float = 0.0
+    post_fill_alpha_decay_penalty: float = 0.0
+    uncertainty_penalty: float = 0.0
+    execution_penalty: float = 0.0
+    model_error_score: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -50,3 +57,4 @@ class SelectedTrade:
     kelly_used: float
     target_notional: float
     confidence: float
+    raw_net_edge: float = 0.0

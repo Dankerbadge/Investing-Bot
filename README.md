@@ -11,6 +11,8 @@ This repo now includes a working Python starter focused on the highest-ROI path:
 4. Concentration-first portfolio construction (top 1-3 setups, low correlation).
 5. First-party archive streams for chain snapshots, signals, orders, and fills.
 6. Ghost broker simulation for passive fill and cancel/replace behavior.
+7. Closed-loop execution learning: archive-derived fill/slippage/decay priors feed score and size.
+8. Counterfactual attribution to isolate selection vs execution vs sizing leakage.
 
 ## Package Layout
 - `src/investing_bot/scoring.py`: net executable edge formula.
@@ -19,6 +21,8 @@ This repo now includes a working Python starter focused on the highest-ROI path:
 - `src/investing_bot/risk.py`: concentration and gross-notional risk limits.
 - `src/investing_bot/archive.py`: append-only JSONL history streams.
 - `src/investing_bot/ghost_broker.py`: passive execution simulation.
+- `src/investing_bot/execution_learning.py`: learns execution priors from your archive.
+- `src/investing_bot/attribution.py`: per-trade counterfactual PnL decomposition.
 - `src/investing_bot/pipeline.py`: end-to-end plan builder.
 
 ## Core Score
@@ -30,6 +34,10 @@ net_edge = (
     - stale_quote_penalty
     - event_gap_penalty
     - capital_lockup_penalty
+    - slippage_p95_penalty
+    - post_fill_alpha_decay_penalty
+    - uncertainty_penalty
+    - execution_penalty
 )
 ```
 
