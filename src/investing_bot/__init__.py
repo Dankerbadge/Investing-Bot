@@ -1,4 +1,12 @@
 from .alerts import Alert, AlertThresholds, generate_alerts
+from .allocator import (
+    AllocatedTrade,
+    AllocationConstraints,
+    AllocationResult,
+    apply_greeks_overlay,
+    optimize_basket,
+    score_incremental_capital_efficiency,
+)
 from .archive import ArchiveWriter
 from .attribution import CounterfactualAttribution, compute_counterfactual_attribution
 from .capabilities import CapabilityRecord, CapabilityRegistry, action_is_allowed
@@ -38,6 +46,14 @@ from .ledger import LedgerEntry, PortfolioLedger
 from .latency import LatencyProfile, build_latency_profile, estimate_latency_penalty, latency_kill_switch
 from .models import Candidate, ScoredCandidate, SelectedTrade
 from .online_policy import OnlinePolicyArm, OnlinePolicyState, choose_online_action, update_online_policy
+from .off_policy_eval import (
+    OffPolicyEstimate,
+    PromotionReport,
+    evaluate_challenger_dr,
+    evaluate_challenger_ips,
+    log_propensity,
+    promotion_report,
+)
 from .ops_dashboard import build_ops_dashboard, dashboard_health
 from .pipeline import build_trade_plan
 from .policy import ActionPolicyStats, choose_entry_action, default_policy_actions, update_entry_policy
@@ -50,6 +66,13 @@ from .reconciliation import (
     OrderStatusTruth,
     reconcile_order_lifecycle,
     resolve_order_status,
+)
+from .recovery import (
+    RecoveryState,
+    detect_orphaned_orders,
+    recover_account_state,
+    rebuild_portfolio_truth,
+    require_broker_parity_before_entries,
 )
 from .risk import ConcentrationLimits, select_concentrated_portfolio
 from .ruin_guard import RuinGuardDecision, compute_ruin_guard
@@ -66,6 +89,9 @@ from .replay import ReplayResult, replay_archive_stream, replay_records
 
 __all__ = [
     "ArchiveWriter",
+    "AllocatedTrade",
+    "AllocationConstraints",
+    "AllocationResult",
     "ActionPolicyStats",
     "Alert",
     "AlertThresholds",
@@ -92,6 +118,7 @@ __all__ = [
     "LiquidityGate",
     "OnlinePolicyArm",
     "OnlinePolicyState",
+    "OffPolicyEstimate",
     "OrderLifecycle",
     "OrderStatusTruth",
     "PolicyPerformance",
@@ -99,6 +126,8 @@ __all__ = [
     "PortfolioState",
     "PositionState",
     "PromotionPolicy",
+    "PromotionReport",
+    "RecoveryState",
     "RegimeContext",
     "ReplayResult",
     "ReliabilityBin",
@@ -112,6 +141,7 @@ __all__ = [
     "action_is_allowed",
     "adjustments_for_candidate",
     "aggregate_telemetry",
+    "apply_greeks_overlay",
     "assignment_risk_score",
     "build_trade_plan",
     "build_ops_dashboard",
@@ -121,6 +151,7 @@ __all__ = [
     "choose_online_action",
     "choose_entry_action",
     "choose_exit_action",
+    "detect_orphaned_orders",
     "composite_policy_score",
     "compute_capital_efficiency",
     "compute_edge_breakdown",
@@ -139,6 +170,8 @@ __all__ = [
     "default_policy_actions",
     "dynamic_fractional_kelly_fraction",
     "estimate_latency_penalty",
+    "evaluate_challenger_dr",
+    "evaluate_challenger_ips",
     "evaluate_stage_transition",
     "evaluate_liquidity",
     "fractional_kelly_fraction",
@@ -148,17 +181,24 @@ __all__ = [
     "infer_regime_context",
     "learn_execution_priors",
     "latency_kill_switch",
+    "log_propensity",
     "notional_from_fraction",
+    "optimize_basket",
+    "promotion_report",
     "quantile_pinball_loss",
     "rank_by_capital_efficiency",
     "reconcile_order_lifecycle",
+    "recover_account_state",
+    "rebuild_portfolio_truth",
     "resolve_order_status",
     "reliability_bins",
     "replay_archive_stream",
     "replay_records",
+    "require_broker_parity_before_entries",
     "regime_penalty",
     "regime_reasons",
     "select_concentrated_portfolio",
+    "score_incremental_capital_efficiency",
     "should_pause_trading",
     "select_champion_policy",
     "stable_hash",

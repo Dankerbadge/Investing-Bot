@@ -34,6 +34,9 @@ This repo now includes a working Python starter focused on the highest-ROI path:
 27. Corporate-action and instrument hygiene gates (`corp_actions.py` + `instrument_registry.py`) integrated into trade gating.
 28. Champion/challenger governance and conservative online policy primitives (`champion_challenger.py` + `online_policy.py`).
 29. Portfolio capital-efficiency scoring helpers and ruin guard controls (`capital_efficiency.py` + `ruin_guard.py`).
+30. Recovery/bootstrap parity controls (`recovery.py`) to block entries until broker and local state reconcile.
+31. Basket allocation + Greeks overlay (`allocator.py`) for portfolio-level capital deployment.
+32. Off-policy evaluation (`off_policy_eval.py`) with IPS/DR estimators for safer challenger promotion.
 
 ## Package Layout
 - `src/investing_bot/scoring.py`: net executable edge formula.
@@ -71,6 +74,9 @@ This repo now includes a working Python starter focused on the highest-ROI path:
 - `src/investing_bot/online_policy.py`: broker-confirmed online action learning primitives.
 - `src/investing_bot/capital_efficiency.py`: alpha-density and capital-efficiency metrics.
 - `src/investing_bot/ruin_guard.py`: drawdown/volatility/streak-based Kelly de-risking controls.
+- `src/investing_bot/recovery.py`: restart/reconnect parity checks and broker-truth recovery gating.
+- `src/investing_bot/allocator.py`: constrained basket optimizer and net-Greeks overlay helpers.
+- `src/investing_bot/off_policy_eval.py`: propensity logging plus IPS/DR challenger evaluation.
 
 ## Core Score
 ```python
