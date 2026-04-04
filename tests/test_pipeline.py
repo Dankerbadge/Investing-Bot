@@ -1,6 +1,8 @@
 from investing_bot.gating import LiquidityGate
+from investing_bot.execution_learning import LearnedExecutionPrior
 from investing_bot.models import Candidate
 from investing_bot.pipeline import build_trade_plan
+from investing_bot.policy import ActionPolicyStats
 from investing_bot.reconciliation import reconcile_order_lifecycle
 from investing_bot.risk import ConcentrationLimits
 
@@ -126,3 +128,76 @@ def test_pipeline_blocks_when_broker_reports_delayed_quotes():
     )
     row = result["scored"][0]
     assert "broker_delayed_quotes_detected" in row["gate_reasons"]
+    assert row["kelly_used"] == 0.0
+
+
+def test_pipeline_live_prior_cap_prevents_mixed_optimism():
+    candidate = _candidate("SPY-CAP", "SPY", "event-1", 0.09)
+    mixed_priors = {
+        "SPY-CAP": LearnedExecutionPrior(
+            bucket_key="SPY-CAP",
+            observations=50,
+            expected_fill_probability=0.95,
+            slippage_p95_penalty=0.001,
+            post_fill_alpha_decay_penalty=0.001,
+            uncertainty_penalty=0.001,
+            execution_penalty=0.0,
+            model_error_score=0.01,
+        )
+    }
+    live_priors = {
+        "SPY-CAP": LearnedExecutionPrior(
+            bucket_key="SPY-CAP",
+            observations=50,
+            expected_fill_probability=0.55,
+            slippage_p95_penalty=0.02,
+            post_fill_alpha_decay_penalty=0.01,
+            uncertainty_penalty=0.01,
+            execution_penalty=0.01,
+            model_error_score=0.20,
+        )
+    }
+    result = build_trade_plan(
+        candidates=[candidate],
+        bankroll=10000,
+        gate=LiquidityGate(),
+        limits=ConcentrationLimits(max_open_positions=1, max_per_underlying=1, max_per_event=1),
+        execution_priors=mixed_priors,
+        live_execution_priors=live_priors,
+        enforce_live_prior_size_cap=True,
+    )
+    row = result["scored"][0]
+    assert row["live_prior_cap_penalty"] > 0.0
+    assert "live_prior_size_cap_applied" in row["gate_reasons"]
+
+
+def test_pipeline_policy_can_force_skip():
+    candidate = _candidate("SPY-SKIP", "SPY", "event-1", 0.08)
+    policy_state = {
+        "skip": ActionPolicyStats(
+            action="skip",
+            attempts=40,
+            broker_confirmed_attempts=40,
+            positive_outcomes=30,
+            cumulative_alpha_density=0.50,
+        ),
+        "passive_touch": ActionPolicyStats(
+            action="passive_touch",
+            attempts=40,
+            broker_confirmed_attempts=40,
+            positive_outcomes=5,
+            cumulative_alpha_density=-0.20,
+        ),
+    }
+    result = build_trade_plan(
+        candidates=[candidate],
+        bankroll=10000,
+        gate=LiquidityGate(),
+        limits=ConcentrationLimits(max_open_positions=1, max_per_underlying=1, max_per_event=1),
+        policy_state=policy_state,
+        policy_min_confirmed_samples=20,
+    )
+    row = result["scored"][0]
+    assert row["policy_action"] == "skip"
+    assert row["kelly_used"] == 0.0
+    assert "policy_skip" in row["gate_reasons"]

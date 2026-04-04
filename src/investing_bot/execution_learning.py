@@ -243,6 +243,20 @@ def _sample_quality_weight(row: dict[str, Any]) -> float:
     return min(1.0, max(0.05, weight))
 
 
+def _is_broker_confirmed(row: dict[str, Any]) -> bool:
+    if bool(row.get("pending_reconciliation")):
+        return False
+    if "broker_confirmed" in row:
+        return bool(row.get("broker_confirmed"))
+    status = str(row.get("broker_status") or row.get("canonical_status") or "").strip().lower()
+    if status:
+        if status in {"filled", "complete", "cancelled", "canceled", "rejected", "expired"}:
+            return True
+        if status in {"working", "submitted", "pending"}:
+            return False
+    return True
+
+
 def _blend(specific: float, parent: float, observations: int, half_life: float = 25.0) -> float:
     weight = max(0.0, min(1.0, observations / (observations + half_life)))
     return weight * specific + (1.0 - weight) * parent
@@ -268,6 +282,8 @@ def learn_execution_priors(
     model_error_by_bucket: dict[str, list[tuple[float, float]]] = {}
 
     for row in orders:
+        if not _is_broker_confirmed(row):
+            continue
         keys = _bucket_key_candidates(row)
         qty = max(1.0, _safe_float(row.get("order_quantity") or row.get("requested_quantity") or 1.0, default=1.0))
         quality_weight = _sample_quality_weight(row)
@@ -275,6 +291,8 @@ def learn_execution_priors(
             attempted_by_bucket[key] = attempted_by_bucket.get(key, 0.0) + (qty * quality_weight)
 
     for row in fills:
+        if not _is_broker_confirmed(row):
+            continue
         keys = _bucket_key_candidates(row)
         quality_weight = _sample_quality_weight(row)
         fill_qty = max(0.0, _safe_float(row.get("fill_quantity") or row.get("filled_quantity") or 0.0, default=0.0))
@@ -297,6 +315,8 @@ def learn_execution_priors(
                 alpha_decay_by_bucket.setdefault(key, []).append((decay, quality_weight))
 
     for row in signals:
+        if not _is_broker_confirmed(row):
+            continue
         keys = _bucket_key_candidates(row)
         quality_weight = _sample_quality_weight(row)
         predicted = _safe_float(row.get("predicted_net_edge") or row.get("expected_net_edge"), default=0.0)

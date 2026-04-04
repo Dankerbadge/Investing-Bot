@@ -46,6 +46,7 @@ def choose_execution_style(
     supports_native_walk = bool(metadata.get("supports_native_walk_limit")) and bool(
         metadata.get("is_stock_etf_option", True)
     )
+    native_walk_verified = bool(metadata.get("native_walk_limit_api_verified"))
     in_regular_hours = bool(metadata.get("is_regular_trading_hours", True))
     allow_native_walk = bool(metadata.get("allow_native_walk_limit", True))
     allow_synthetic_ladder = bool(metadata.get("allow_synthetic_ladder", True))
@@ -57,7 +58,7 @@ def choose_execution_style(
     elif spread <= 0.025 and fill_prob >= 0.60 and confidence >= 0.6:
         style = "passive_improve"
     elif spread <= 0.05 and fill_prob >= 0.45:
-        if supports_native_walk and in_regular_hours and not delayed_quotes and allow_native_walk:
+        if supports_native_walk and native_walk_verified and in_regular_hours and not delayed_quotes and allow_native_walk:
             style = "native_walk_limit"
         elif allow_synthetic_ladder:
             style = "synthetic_ladder"

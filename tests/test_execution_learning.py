@@ -242,3 +242,47 @@ def test_execution_learning_downweights_delayed_low_reliability_samples(tmp_path
     )
     adj = adjustments_for_candidate(candidate, priors)
     assert (adj.expected_fill_probability or 0.0) > 0.75
+
+
+def test_execution_learning_ignores_unconfirmed_records(tmp_path):
+    archive_root = tmp_path / "archive"
+    _append_jsonl(
+        archive_root / "orders" / "live" / "2026-04-04.jsonl",
+        [
+            {
+                "strategy_family": "iv_repricing",
+                "underlying": "SPY",
+                "order_quantity": 10,
+                "data_source": "live",
+                "broker_confirmed": False,
+            },
+            {
+                "strategy_family": "iv_repricing",
+                "underlying": "SPY",
+                "order_quantity": 10,
+                "data_source": "live",
+                "broker_confirmed": False,
+            },
+            {
+                "strategy_family": "iv_repricing",
+                "underlying": "SPY",
+                "order_quantity": 10,
+                "data_source": "live",
+                "broker_confirmed": False,
+            },
+        ],
+    )
+    _append_jsonl(
+        archive_root / "fills" / "live" / "2026-04-04.jsonl",
+        [
+            {
+                "strategy_family": "iv_repricing",
+                "underlying": "SPY",
+                "fill_quantity": 10,
+                "data_source": "live",
+                "broker_confirmed": False,
+            }
+        ],
+    )
+    priors = learn_execution_priors(archive_root, allowed_sources=("live",))
+    assert priors == {}

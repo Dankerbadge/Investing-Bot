@@ -20,6 +20,10 @@ This repo now includes a working Python starter focused on the highest-ROI path:
 13. Calibration metrics (Brier score, pinball loss, reliability bins) for execution-learning quality.
 14. Native walk-limit vs synthetic-ladder execution paths with separate churn/race penalties.
 15. Quality-stamped archive rows and quality-weighted execution priors.
+16. Broker-confirmed-only policy learning and explicit policy skip action.
+17. Exit policy engine scaffold (assignment/drift/quote-quality aware).
+18. Drift governor to auto-reduce Kelly during calibration stress.
+19. Native walk-limit is only selectable when API executability is explicitly verified.
 
 ## Package Layout
 - `src/investing_bot/scoring.py`: net executable edge formula.
@@ -33,6 +37,8 @@ This repo now includes a working Python starter focused on the highest-ROI path:
 - `src/investing_bot/attribution.py`: per-trade counterfactual PnL decomposition.
 - `src/investing_bot/reconciliation.py`: reconciles order lifecycle from broker/account events.
 - `src/investing_bot/calibration.py`: fill/slippage calibration metrics and reliability summaries.
+- `src/investing_bot/policy.py`: broker-confirmed policy updates and entry action selection.
+- `src/investing_bot/exit_policy.py`: exit/hedge decision policy scaffold.
 - `src/investing_bot/pipeline.py`: end-to-end plan builder.
 - `src/investing_bot/ghost_broker.py`: style-aware fill simulation (passive, native walk, synthetic ladder, cross).
 

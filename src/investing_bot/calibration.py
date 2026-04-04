@@ -123,3 +123,37 @@ def summarize_fill_calibration(
             for item in bins
         ],
     }
+
+
+def compute_drift_kelly_multiplier(
+    *,
+    brier_score_value: float,
+    slippage_p75: float = 0.0,
+    race_incident_rate: float = 0.0,
+    brier_warn: float = 0.20,
+    brier_hard: float = 0.30,
+    slippage_warn: float = 0.02,
+    slippage_hard: float = 0.05,
+    race_warn: float = 0.03,
+    race_hard: float = 0.08,
+) -> float:
+    def _factor(value: float, warn: float, hard: float) -> float:
+        v = max(0.0, float(value))
+        w = max(0.0, float(warn))
+        h = max(w + 1e-9, float(hard))
+        if v <= w:
+            return 1.0
+        if v >= h:
+            return 0.0
+        ratio = (v - w) / (h - w)
+        return max(0.0, 1.0 - ratio)
+
+    brier_factor = _factor(brier_score_value, brier_warn, brier_hard)
+    slippage_factor = _factor(slippage_p75, slippage_warn, slippage_hard)
+    race_factor = _factor(race_incident_rate, race_warn, race_hard)
+    # Conservative composition: one failing channel should dominate de-risking.
+    return round(max(0.0, min(1.0, brier_factor * slippage_factor * race_factor)), 6)
+
+
+def should_pause_trading(multiplier: float, minimum_live_multiplier: float = 0.10) -> bool:
+    return float(multiplier) <= float(minimum_live_multiplier)

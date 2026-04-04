@@ -3,6 +3,8 @@
   "kelly_fraction": 0.25,
   "min_kelly_used": 0.002,
   "max_kelly_used": 0.1,
+  "drift_kelly_multiplier": 1.0,
+  "enforce_live_prior_size_cap": true,
   "learning_allowed_sources": ["live"],
   "order_request_budget_per_minute": 120,
   "liquidity_gate": {

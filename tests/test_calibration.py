@@ -1,4 +1,11 @@
-from investing_bot.calibration import brier_score, quantile_pinball_loss, reliability_bins, summarize_fill_calibration
+from investing_bot.calibration import (
+    brier_score,
+    compute_drift_kelly_multiplier,
+    quantile_pinball_loss,
+    reliability_bins,
+    should_pause_trading,
+    summarize_fill_calibration,
+)
 
 
 def test_brier_score_matches_expected_value():
@@ -44,3 +51,18 @@ def test_summarize_fill_calibration_accepts_boolean_outcomes():
     assert summary["count"] == 3
     assert 0.0 <= summary["brier_score"] <= 1.0
     assert len(summary["reliability_bins"]) == 5
+
+
+def test_drift_multiplier_reduces_with_calibration_stress():
+    healthy = compute_drift_kelly_multiplier(
+        brier_score_value=0.10,
+        slippage_p75=0.01,
+        race_incident_rate=0.01,
+    )
+    stressed = compute_drift_kelly_multiplier(
+        brier_score_value=0.31,
+        slippage_p75=0.06,
+        race_incident_rate=0.10,
+    )
+    assert healthy > stressed
+    assert should_pause_trading(stressed) is True
