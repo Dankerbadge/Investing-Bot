@@ -1,0 +1,52 @@
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Any
+
+
+@dataclass(frozen=True)
+class Candidate:
+    ticker: str
+    underlying: str
+    event_key: str
+    strategy_family: str
+    side: str
+    reference_price: float
+    surface_residual: float
+    convergence_probability: float
+    fill_probability: float
+    spread_cost: float
+    hedge_cost: float
+    stale_quote_penalty: float
+    event_gap_penalty: float
+    capital_lockup_penalty: float
+    confidence: float
+    book_depth_contracts: int
+    quote_age_seconds: float
+    payoff_multiple: float
+    loss_multiple: float = 1.0
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class ScoredCandidate:
+    candidate: Candidate
+    net_edge: float
+    executable: bool
+    gate_reasons: tuple[str, ...]
+    kelly_full: float
+    kelly_used: float
+    target_notional: float
+
+
+@dataclass(frozen=True)
+class SelectedTrade:
+    ticker: str
+    underlying: str
+    event_key: str
+    strategy_family: str
+    side: str
+    net_edge: float
+    kelly_used: float
+    target_notional: float
+    confidence: float
