@@ -7,6 +7,7 @@ from .execution_learning import LearnedExecutionPrior, adjustments_for_candidate
 from .execution_style import choose_execution_style
 from .gating import LiquidityGate, evaluate_liquidity
 from .models import Candidate, ScoredCandidate
+from .reconciliation import BrokerTruthSnapshot
 from .risk import ConcentrationLimits, select_concentrated_portfolio
 from .scoring import compute_edge_breakdown
 from .sizing import (
@@ -31,24 +32,55 @@ def build_trade_plan(
     drawdown_fraction: float = 0.0,
     recent_order_requests_per_minute: float = 0.0,
     order_request_budget_per_minute: float = 120.0,
+    broker_truth_snapshot: BrokerTruthSnapshot | None = None,
+    require_broker_truth_clean: bool = True,
 ) -> dict[str, Any]:
     scored: list[ScoredCandidate] = []
+    broker_observed_rpm = 0.0
+    if broker_truth_snapshot is not None:
+        broker_observed_rpm = float(broker_truth_snapshot.observed_requests_per_minute)
+    effective_recent_rpm = max(0.0, float(recent_order_requests_per_minute), broker_observed_rpm)
 
     for candidate in candidates:
         adjustments = adjustments_for_candidate(candidate, execution_priors)
         edge = compute_edge_breakdown(candidate, adjustments)
         passes_gate, reasons = evaluate_liquidity(candidate, gate)
+        metadata = candidate.metadata if isinstance(candidate.metadata, dict) else {}
+        broker_reasons: list[str] = []
         style_decision = choose_execution_style(
             candidate=candidate,
             adjusted_edge=edge.adjusted_net_edge,
-            recent_order_requests_per_minute=recent_order_requests_per_minute,
+            recent_order_requests_per_minute=effective_recent_rpm,
             order_request_budget_per_minute=order_request_budget_per_minute,
         )
-        edge_after_style = (
+        execution_adjusted_edge = edge.adjusted_net_edge
+        style_adjusted_edge = (
             edge.adjusted_net_edge
             - style_decision.request_budget_penalty
             - style_decision.cancel_replace_race_penalty
         )
+        risk_penalty = max(
+            0.0,
+            float(metadata.get("pre_trade_risk_penalty") or metadata.get("risk_penalty") or 0.0),
+        )
+
+        if require_broker_truth_clean and broker_truth_snapshot is not None:
+            if broker_truth_snapshot.delayed_quotes_detected:
+                broker_reasons.append("broker_delayed_quotes_detected")
+                risk_penalty += 0.01
+            if broker_truth_snapshot.request_budget_breached:
+                broker_reasons.append("broker_request_budget_breached")
+                risk_penalty += 0.005
+            client_order_id = str(metadata.get("client_order_id") or "").strip()
+            if client_order_id and client_order_id in set(broker_truth_snapshot.duplicate_client_order_ids):
+                broker_reasons.append("duplicate_client_order_id_detected")
+                risk_penalty += 0.02
+            order_signature = str(metadata.get("order_signature") or "").strip()
+            if order_signature and order_signature in set(broker_truth_snapshot.duplicate_order_signatures):
+                broker_reasons.append("duplicate_order_signature_detected")
+                risk_penalty += 0.02
+
+        risk_adjusted_edge = style_adjusted_edge - risk_penalty
 
         kelly_full = full_kelly_fraction(
             win_probability=candidate.convergence_probability,
@@ -76,23 +108,28 @@ def build_trade_plan(
                 min_fraction=0.0,
                 max_fraction=max_kelly_used,
             )
-        if edge_after_style <= 0 or not passes_gate:
+        if risk_adjusted_edge <= 0 or not passes_gate:
             kelly_used = 0.0
         target_notional = notional_from_fraction(bankroll=bankroll, fraction=kelly_used)
         expected_holding_minutes = float(candidate.metadata.get("expected_holding_minutes") or 60.0)
         expected_holding_minutes = max(1.0, expected_holding_minutes)
         capital_minutes = max(1.0, target_notional * expected_holding_minutes)
         alpha_density = (
-            max(0.0, edge_after_style) * max(0.0, edge.expected_fill_probability) / capital_minutes
+            max(0.0, risk_adjusted_edge) * max(0.0, edge.expected_fill_probability) / capital_minutes
         )
 
         gate_reasons = list(reasons)
-        if edge_after_style <= 0:
+        gate_reasons.extend(broker_reasons)
+        if risk_adjusted_edge <= 0:
             gate_reasons.append("net_edge_non_positive")
         if kelly_used < min_kelly_used:
             gate_reasons.append("kelly_used_below_min")
-        if edge.raw_net_edge > 0 and edge_after_style <= 0:
-            gate_reasons.append("execution_haircut_eliminated_edge")
+        if edge.raw_net_edge > 0 and execution_adjusted_edge <= 0:
+            gate_reasons.append("execution_learning_haircut_eliminated_edge")
+        if execution_adjusted_edge > 0 and style_adjusted_edge <= 0:
+            gate_reasons.append("execution_style_haircut_eliminated_edge")
+        if style_adjusted_edge > 0 and risk_adjusted_edge <= 0:
+            gate_reasons.append("risk_haircut_eliminated_edge")
         if not passes_gate:
             gate_reasons.append("liquidity_gate_failed")
 
@@ -101,7 +138,7 @@ def build_trade_plan(
         scored.append(
             ScoredCandidate(
                 candidate=candidate,
-                net_edge=round(edge_after_style, 6),
+                net_edge=round(risk_adjusted_edge, 6),
                 executable=executable,
                 gate_reasons=tuple(gate_reasons),
                 kelly_full=round(kelly_full, 6),
@@ -121,11 +158,13 @@ def build_trade_plan(
                 model_error_score=round(edge.model_error_score, 6),
                 alpha_density=round(alpha_density, 10),
                 execution_style=style_decision.style,
+                expected_replace_count=max(0, int(style_decision.expected_replace_count)),
                 request_budget_penalty=round(style_decision.request_budget_penalty, 6),
                 cancel_replace_race_penalty=round(style_decision.cancel_replace_race_penalty, 6),
-                execution_adjusted_edge=round(edge.adjusted_net_edge, 6),
-                style_adjusted_edge=round(edge_after_style, 6),
-                risk_adjusted_edge=round(edge_after_style, 6),
+                risk_penalty=round(risk_penalty, 6),
+                execution_adjusted_edge=round(execution_adjusted_edge, 6),
+                style_adjusted_edge=round(style_adjusted_edge, 6),
+                risk_adjusted_edge=round(risk_adjusted_edge, 6),
             )
         )
 
@@ -160,8 +199,10 @@ def build_trade_plan(
                 "model_error_score": row.model_error_score,
                 "alpha_density": row.alpha_density,
                 "execution_style": row.execution_style,
+                "expected_replace_count": row.expected_replace_count,
                 "request_budget_penalty": row.request_budget_penalty,
                 "cancel_replace_race_penalty": row.cancel_replace_race_penalty,
+                "risk_penalty": row.risk_penalty,
                 "execution_adjusted_edge": row.execution_adjusted_edge,
                 "style_adjusted_edge": row.style_adjusted_edge,
                 "risk_adjusted_edge": row.risk_adjusted_edge,

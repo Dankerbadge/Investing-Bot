@@ -1,6 +1,7 @@
 from investing_bot.gating import LiquidityGate
 from investing_bot.models import Candidate
 from investing_bot.pipeline import build_trade_plan
+from investing_bot.reconciliation import reconcile_order_lifecycle
 from investing_bot.risk import ConcentrationLimits
 
 
@@ -91,3 +92,37 @@ def test_pipeline_exposes_staged_edge_fields():
     assert "execution_adjusted_edge" in row
     assert "style_adjusted_edge" in row
     assert "risk_adjusted_edge" in row
+
+
+def test_pipeline_applies_risk_penalty_after_style_stage():
+    candidate = _candidate("SPY-RISK", "SPY", "event-1", 0.08)
+    candidate.metadata["pre_trade_risk_penalty"] = 0.02
+
+    result = build_trade_plan(
+        candidates=[candidate],
+        bankroll=10000,
+        gate=LiquidityGate(),
+        limits=ConcentrationLimits(max_open_positions=1, max_per_underlying=1, max_per_event=1),
+    )
+    row = result["scored"][0]
+    assert row["risk_penalty"] == 0.02
+    assert row["risk_adjusted_edge"] < row["style_adjusted_edge"]
+
+
+def test_pipeline_blocks_when_broker_reports_delayed_quotes():
+    candidate = _candidate("SPY-BROKER", "SPY", "event-1", 0.08)
+    snapshot = reconcile_order_lifecycle(
+        order_events=[],
+        account_activity_events=[{"quote_mode": "delayed", "timestamp": "2026-04-04T10:00:00Z"}],
+    )
+
+    result = build_trade_plan(
+        candidates=[candidate],
+        bankroll=10000,
+        gate=LiquidityGate(),
+        limits=ConcentrationLimits(max_open_positions=1, max_per_underlying=1, max_per_event=1),
+        broker_truth_snapshot=snapshot,
+        require_broker_truth_clean=True,
+    )
+    row = result["scored"][0]
+    assert "broker_delayed_quotes_detected" in row["gate_reasons"]

@@ -46,8 +46,10 @@ class ScoredCandidate:
     model_error_score: float = 0.0
     alpha_density: float = 0.0
     execution_style: str = "passive_touch"
+    expected_replace_count: int = 0
     request_budget_penalty: float = 0.0
     cancel_replace_race_penalty: float = 0.0
+    risk_penalty: float = 0.0
     execution_adjusted_edge: float = 0.0
     style_adjusted_edge: float = 0.0
     risk_adjusted_edge: float = 0.0

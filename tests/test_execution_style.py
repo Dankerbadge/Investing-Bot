@@ -46,3 +46,44 @@ def test_execution_style_penalty_increases_with_budget_pressure():
 
     assert high.request_budget_penalty > low.request_budget_penalty
     assert high.cancel_replace_race_penalty >= low.cancel_replace_race_penalty
+
+
+def test_native_walk_limit_selected_when_supported():
+    candidate = _candidate(
+        spread_cost=0.04,
+        fill_probability=0.55,
+        metadata={
+            "supports_native_walk_limit": True,
+            "is_stock_etf_option": True,
+            "is_regular_trading_hours": True,
+            "allow_native_walk_limit": True,
+            "quote_mode": "realtime",
+        },
+    )
+    decision = choose_execution_style(
+        candidate=candidate,
+        adjusted_edge=0.03,
+        recent_order_requests_per_minute=20,
+        order_request_budget_per_minute=120,
+    )
+    assert decision.style == "native_walk_limit"
+    assert decision.expected_replace_count == 1
+
+
+def test_synthetic_ladder_used_when_native_unavailable():
+    candidate = _candidate(
+        spread_cost=0.04,
+        fill_probability=0.55,
+        metadata={
+            "supports_native_walk_limit": False,
+            "allow_synthetic_ladder": True,
+        },
+    )
+    decision = choose_execution_style(
+        candidate=candidate,
+        adjusted_edge=0.03,
+        recent_order_requests_per_minute=20,
+        order_request_budget_per_minute=120,
+    )
+    assert decision.style == "synthetic_ladder"
+    assert decision.expected_replace_count >= 3

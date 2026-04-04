@@ -43,12 +43,30 @@ def _normalize_source(value: Any) -> str:
     return "live"
 
 
-def _percentile(sorted_values: list[float], q: float) -> float:
-    if not sorted_values:
+def _weighted_percentile(samples: list[tuple[float, float]], q: float) -> float:
+    if not samples:
         return 0.0
     clamped_q = min(1.0, max(0.0, q))
-    idx = int((len(sorted_values) - 1) * clamped_q)
-    return sorted_values[idx]
+    normalized: list[tuple[float, float]] = []
+    for value, weight in samples:
+        v = float(value)
+        w = max(0.0, float(weight))
+        if w <= 0.0:
+            continue
+        normalized.append((v, w))
+    if not normalized:
+        return 0.0
+    normalized.sort(key=lambda item: item[0])
+    total_weight = sum(weight for _, weight in normalized)
+    if total_weight <= 0:
+        return 0.0
+    threshold = total_weight * clamped_q
+    cumulative = 0.0
+    for value, weight in normalized:
+        cumulative += weight
+        if cumulative >= threshold:
+            return value
+    return normalized[-1][0]
 
 
 def _read_jsonl(path: Path) -> list[dict[str, Any]]:
@@ -192,6 +210,39 @@ def _bucket_key_candidates_for_candidate(candidate: Candidate) -> list[str]:
     return _bucket_key_candidates(synthetic_row)
 
 
+def _sample_quality_weight(row: dict[str, Any]) -> float:
+    source = _normalize_source(row.get("data_source"))
+    source_weight = {
+        "live": 1.0,
+        "paper": 0.70,
+        "ghost": 0.50,
+    }.get(source, 0.70)
+
+    quote_score = _safe_float(row.get("quote_reliability_score"), default=-1.0)
+    if quote_score < 0.0:
+        quote_tier = str(row.get("quote_quality_tier") or "").strip().lower()
+        quote_score = {
+            "realtime": 1.0,
+            "unknown": 0.75,
+            "stale": 0.40,
+            "delayed": 0.25,
+        }.get(quote_tier, 0.75)
+    quote_score = min(1.0, max(0.1, quote_score))
+
+    book_score = _safe_float(row.get("book_reliability_score"), default=-1.0)
+    if book_score < 0.0:
+        book_tier = str(row.get("book_reliability_tier") or "").strip().lower()
+        book_score = {
+            "high": 0.95,
+            "medium": 0.75,
+            "low": 0.50,
+        }.get(book_tier, 0.75)
+    book_score = min(1.0, max(0.2, book_score))
+
+    weight = source_weight * quote_score * book_score
+    return min(1.0, max(0.05, weight))
+
+
 def _blend(specific: float, parent: float, observations: int, half_life: float = 25.0) -> float:
     weight = max(0.0, min(1.0, observations / (observations + half_life)))
     return weight * specific + (1.0 - weight) * parent
@@ -212,18 +263,20 @@ def learn_execution_priors(
 
     attempted_by_bucket: dict[str, float] = {}
     filled_by_bucket: dict[str, float] = {}
-    slippage_by_bucket: dict[str, list[float]] = {}
-    alpha_decay_by_bucket: dict[str, list[float]] = {}
-    model_error_by_bucket: dict[str, list[float]] = {}
+    slippage_by_bucket: dict[str, list[tuple[float, float]]] = {}
+    alpha_decay_by_bucket: dict[str, list[tuple[float, float]]] = {}
+    model_error_by_bucket: dict[str, list[tuple[float, float]]] = {}
 
     for row in orders:
         keys = _bucket_key_candidates(row)
         qty = max(1.0, _safe_float(row.get("order_quantity") or row.get("requested_quantity") or 1.0, default=1.0))
+        quality_weight = _sample_quality_weight(row)
         for key in keys:
-            attempted_by_bucket[key] = attempted_by_bucket.get(key, 0.0) + qty
+            attempted_by_bucket[key] = attempted_by_bucket.get(key, 0.0) + (qty * quality_weight)
 
     for row in fills:
         keys = _bucket_key_candidates(row)
+        quality_weight = _sample_quality_weight(row)
         fill_qty = max(0.0, _safe_float(row.get("fill_quantity") or row.get("filled_quantity") or 0.0, default=0.0))
         slippage = abs(_safe_float(row.get("slippage_dollars") or row.get("fill_vs_mid_dollars"), default=0.0))
         decay = abs(
@@ -237,20 +290,21 @@ def learn_execution_priors(
 
         for key in keys:
             if fill_qty > 0:
-                filled_by_bucket[key] = filled_by_bucket.get(key, 0.0) + fill_qty
+                filled_by_bucket[key] = filled_by_bucket.get(key, 0.0) + (fill_qty * quality_weight)
             if slippage > 0:
-                slippage_by_bucket.setdefault(key, []).append(slippage)
+                slippage_by_bucket.setdefault(key, []).append((slippage, quality_weight))
             if decay > 0:
-                alpha_decay_by_bucket.setdefault(key, []).append(decay)
+                alpha_decay_by_bucket.setdefault(key, []).append((decay, quality_weight))
 
     for row in signals:
         keys = _bucket_key_candidates(row)
+        quality_weight = _sample_quality_weight(row)
         predicted = _safe_float(row.get("predicted_net_edge") or row.get("expected_net_edge"), default=0.0)
         realized = _safe_float(row.get("realized_net_edge"), default=0.0)
         if predicted != 0.0 or realized != 0.0:
             err = abs(predicted - realized)
             for key in keys:
-                model_error_by_bucket.setdefault(key, []).append(err)
+                model_error_by_bucket.setdefault(key, []).append((err, quality_weight))
 
     all_keys = (
         set(attempted_by_bucket)
@@ -264,19 +318,23 @@ def learn_execution_priors(
     for key in sorted(all_keys):
         attempts = attempted_by_bucket.get(key, 0.0)
         fills_qty = filled_by_bucket.get(key, 0.0)
-        observations = int(max(attempts, len(slippage_by_bucket.get(key, [])), len(alpha_decay_by_bucket.get(key, []))))
+        slippage_samples = slippage_by_bucket.get(key, [])
+        alpha_decay_samples = alpha_decay_by_bucket.get(key, [])
+        model_error_samples = model_error_by_bucket.get(key, [])
+        weighted_slippage_obs = sum(weight for _, weight in slippage_samples)
+        weighted_alpha_decay_obs = sum(weight for _, weight in alpha_decay_samples)
+        weighted_model_error_obs = sum(weight for _, weight in model_error_samples)
+        observations = int(
+            round(max(attempts, weighted_slippage_obs, weighted_alpha_decay_obs, weighted_model_error_obs))
+        )
         if observations < min_observations:
             continue
 
         fill_probability = (fills_qty + 1.0) / (attempts + 2.0) if attempts > 0 else 0.5
 
-        slippages = sorted(slippage_by_bucket.get(key, []))
-        alpha_decays = sorted(alpha_decay_by_bucket.get(key, []))
-        model_errors = sorted(model_error_by_bucket.get(key, []))
-
-        slippage_p95 = _percentile(slippages, 0.95)
-        alpha_decay_p95 = _percentile(alpha_decays, 0.95)
-        model_error_p95 = _percentile(model_errors, 0.95)
+        slippage_p95 = _weighted_percentile(slippage_samples, 0.95)
+        alpha_decay_p95 = _weighted_percentile(alpha_decay_samples, 0.95)
+        model_error_p95 = _weighted_percentile(model_error_samples, 0.95)
 
         execution_penalty = max(0.0, (1.0 - fill_probability) * 0.02)
         uncertainty_penalty = model_error_p95
