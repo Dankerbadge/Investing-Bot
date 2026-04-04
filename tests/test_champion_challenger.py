@@ -17,9 +17,52 @@ def test_composite_score_penalizes_operational_risk():
 
 
 def test_select_champion_promotes_eligible_better_challenger():
-    current = PolicyPerformance(name="champion", replay_alpha_density_lcb=0.005, probe_alpha_density_lcb=0.004, live_alpha_density_lcb=0.003, sample_count=120)
-    challenger = PolicyPerformance(name="challenger", replay_alpha_density_lcb=0.02, probe_alpha_density_lcb=0.02, live_alpha_density_lcb=0.01, sample_count=120)
+    current = PolicyPerformance(
+        name="champion",
+        replay_alpha_density_lcb=0.005,
+        probe_alpha_density_lcb=0.004,
+        live_alpha_density_lcb=0.003,
+        broker_confirmed_live_samples=120,
+        sample_count=120,
+    )
+    challenger = PolicyPerformance(
+        name="challenger",
+        replay_alpha_density_lcb=0.02,
+        probe_alpha_density_lcb=0.02,
+        live_alpha_density_lcb=0.01,
+        broker_confirmed_live_samples=120,
+        sample_count=120,
+    )
 
     decision = select_champion_policy(current=current, challengers=[challenger], min_sample_count=30)
     assert decision.promoted
     assert decision.champion == "challenger"
+
+
+def test_select_champion_requires_broker_confirmed_live_evidence():
+    current = PolicyPerformance(
+        name="champion",
+        replay_alpha_density_lcb=0.01,
+        probe_alpha_density_lcb=0.01,
+        live_alpha_density_lcb=0.005,
+        broker_confirmed_live_samples=120,
+        sample_count=120,
+    )
+    challenger = PolicyPerformance(
+        name="challenger",
+        replay_alpha_density_lcb=0.03,
+        probe_alpha_density_lcb=0.03,
+        live_alpha_density_lcb=0.02,
+        broker_confirmed_live_samples=5,
+        sample_count=120,
+    )
+
+    decision = select_champion_policy(
+        current=current,
+        challengers=[challenger],
+        min_sample_count=30,
+        min_broker_confirmed_live_samples=30,
+    )
+    assert not decision.promoted
+    assert decision.champion == "champion"
+    assert decision.reason == "no_eligible_challengers"

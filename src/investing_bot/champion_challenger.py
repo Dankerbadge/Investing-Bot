@@ -10,6 +10,7 @@ class PolicyPerformance:
     shadow_alpha_density_lcb: float = 0.0
     probe_alpha_density_lcb: float = 0.0
     live_alpha_density_lcb: float = 0.0
+    broker_confirmed_live_samples: int = 0
     operational_penalty: float = 0.0
     broker_mismatch_rate: float = 0.0
     sample_count: int = 0
@@ -39,6 +40,8 @@ def select_champion_policy(
     current: PolicyPerformance,
     challengers: list[PolicyPerformance],
     min_sample_count: int = 30,
+    min_broker_confirmed_live_samples: int = 30,
+    min_live_alpha_density_lcb: float = 0.0,
     min_score_improvement: float = 0.002,
 ) -> ChampionDecision:
     scores: dict[str, float] = {current.name: composite_policy_score(current)}
@@ -46,8 +49,13 @@ def select_champion_policy(
     eligible: list[PolicyPerformance] = []
     for challenger in challengers:
         scores[challenger.name] = composite_policy_score(challenger)
-        if challenger.sample_count >= min_sample_count:
-            eligible.append(challenger)
+        if challenger.sample_count < min_sample_count:
+            continue
+        if challenger.broker_confirmed_live_samples < min_broker_confirmed_live_samples:
+            continue
+        if challenger.live_alpha_density_lcb <= float(min_live_alpha_density_lcb):
+            continue
+        eligible.append(challenger)
 
     if not eligible:
         return ChampionDecision(

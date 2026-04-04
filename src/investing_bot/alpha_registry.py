@@ -86,14 +86,25 @@ class AlphaRegistry:
         self,
         feature_rows: list[dict[str, Any]],
         enabled_families: tuple[str, ...] | list[str] | None = None,
+        live_evidence_by_family: dict[str, int] | None = None,
+        min_broker_confirmed_live_samples: int = 0,
     ) -> list[AlphaSignal]:
         if enabled_families:
             families = tuple(dict.fromkeys(str(name).strip().lower() for name in enabled_families if str(name).strip()))
         else:
             families = self.available_families()
 
+        evidence_map = {
+            str(name or "").strip().lower(): int(value)
+            for name, value in (live_evidence_by_family or {}).items()
+            if str(name or "").strip()
+        }
+
         signals: list[AlphaSignal] = []
         for family in families:
+            if int(min_broker_confirmed_live_samples) > 0:
+                if evidence_map.get(family, 0) < int(min_broker_confirmed_live_samples):
+                    continue
             signals.extend(self.evaluate_family(family, feature_rows))
         return sorted(signals, key=lambda row: (row.score, row.expected_edge, row.confidence), reverse=True)
 

@@ -95,3 +95,16 @@ def test_signals_convert_to_candidates_with_feature_context():
     assert symbols == {"SPY", "QQQ", "IWM"}
     assert all(candidate.metadata["alpha_family"] in {"filing_vol", "post_event_iv", "open_drive"} for candidate in candidates)
     assert all(candidate.reference_price > 0 for candidate in candidates)
+
+
+def test_registry_can_gate_families_on_broker_confirmed_live_evidence():
+    registry = build_default_alpha_registry()
+    rows = _feature_rows()
+
+    signals = registry.evaluate_all(
+        rows,
+        live_evidence_by_family={"post_event_iv": 45, "filing_vol": 10, "open_drive": 0},
+        min_broker_confirmed_live_samples=30,
+    )
+    assert len(signals) == 1
+    assert signals[0].family == "post_event_iv"

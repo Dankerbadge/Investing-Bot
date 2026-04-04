@@ -30,7 +30,13 @@ from .calibration import (
 )
 from .capabilities import CapabilityRecord, CapabilityRegistry, action_is_allowed
 from .capital_efficiency import CapitalEfficiency, compute_capital_efficiency, rank_by_capital_efficiency
-from .campaign_manager import AlphaCampaign, CampaignDecision, CampaignManager, allocate_probe_budget
+from .campaign_manager import (
+    AlphaCampaign,
+    CampaignDecision,
+    CampaignManager,
+    allocate_probe_budget,
+    resolve_family_probe_weight,
+)
 from .chaos_harness import ChaosRunResult, ChaosScenario, ChaosScenarioResult, default_fault_scenarios, run_chaos_suite
 from .champion_challenger import (
     ChampionDecision,
@@ -292,6 +298,7 @@ __all__ = [
     "regime_penalty",
     "regime_reasons",
     "reliability_bins",
+    "resolve_family_probe_weight",
     "replay_archive_stream",
     "replay_records",
     "require_broker_parity_before_entries",

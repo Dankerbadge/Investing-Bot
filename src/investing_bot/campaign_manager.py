@@ -11,12 +11,29 @@ from .sequential_tests import (
     update_state,
 )
 
+DEFAULT_ALPHA_PROBE_WEIGHTS: dict[str, float] = {
+    "post_event_iv": 0.60,
+    "filing_vol": 0.25,
+    "open_drive": 0.15,
+}
+
+_STAGE_MULTIPLIERS: dict[str, float] = {
+    "disabled": 0.0,
+    "shadow": 0.0,
+    "probe": 0.05,
+    "scaled_1": 0.10,
+    "scaled_2": 0.15,
+    "scaled_3": 0.25,
+    "mature": 0.25,
+}
+
 
 @dataclass(frozen=True)
 class AlphaCampaign:
     alpha_name: str
     stage: str
     allocated_probe_budget: float
+    family_probe_weight: float = 1.0
     spent_budget: float = 0.0
     confirmed_samples: int = 0
     test_state: SequentialTestState = SequentialTestState()
@@ -51,19 +68,38 @@ def allocate_probe_budget(
     min_budget: float = 0.0,
 ) -> float:
     stage_norm = _normalize_stage(stage)
-    multipliers = {
-        "disabled": 0.0,
-        "shadow": 0.0,
-        "probe": 0.05,
-        "scaled_1": 0.10,
-        "scaled_2": 0.15,
-        "scaled_3": 0.25,
-        "mature": 0.25,
-    }
-    stage_mult = multipliers.get(stage_norm, 0.05)
+    stage_mult = _STAGE_MULTIPLIERS.get(stage_norm, 0.05)
     health = max(0.0, min(1.0, float(bucket_health_score)))
     allocated = max(float(min_budget), float(total_budget) * stage_mult * health)
     return round(max(0.0, allocated), 6)
+
+
+def resolve_family_probe_weight(
+    alpha_name: str,
+    *,
+    family_probe_weights: dict[str, float] | None = None,
+    default_weight: float = 0.10,
+) -> float:
+    key = str(alpha_name or "").strip().lower()
+    if not key:
+        return max(0.0, float(default_weight))
+
+    merged = dict(DEFAULT_ALPHA_PROBE_WEIGHTS)
+    if family_probe_weights:
+        for name, weight in family_probe_weights.items():
+            name_key = str(name or "").strip().lower()
+            if not name_key:
+                continue
+            value = max(0.0, float(weight))
+            if value > 0:
+                merged[name_key] = value
+            elif name_key in merged:
+                merged.pop(name_key, None)
+
+    value = merged.get(key)
+    if value is None:
+        value = max(0.0, float(default_weight))
+    return round(float(value), 6)
 
 
 @dataclass
@@ -77,18 +113,30 @@ class CampaignManager:
         stage: str,
         total_budget: float,
         bucket_health_score: float = 1.0,
+        family_probe_weights: dict[str, float] | None = None,
+        default_family_probe_weight: float = 0.10,
     ) -> AlphaCampaign:
         key = str(alpha_name or "").strip().lower()
         if not key:
             raise ValueError("alpha_name is required")
         stage_norm = _normalize_stage(stage)
+        family_weight = resolve_family_probe_weight(
+            key,
+            family_probe_weights=family_probe_weights,
+            default_weight=default_family_probe_weight,
+        )
         budget = allocate_probe_budget(
             alpha_name=key,
             stage=stage_norm,
             total_budget=total_budget,
             bucket_health_score=bucket_health_score,
         )
-        campaign = AlphaCampaign(alpha_name=key, stage=stage_norm, allocated_probe_budget=budget)
+        campaign = AlphaCampaign(
+            alpha_name=key,
+            stage=stage_norm,
+            allocated_probe_budget=budget,
+            family_probe_weight=family_weight,
+        )
         self.campaigns[key] = campaign
         return campaign
 
@@ -121,6 +169,7 @@ class CampaignManager:
             alpha_name=campaign.alpha_name,
             stage=campaign.stage,
             allocated_probe_budget=campaign.allocated_probe_budget,
+            family_probe_weight=campaign.family_probe_weight,
             spent_budget=round(campaign.spent_budget + max(0.0, float(probe_cost)), 6),
             confirmed_samples=confirmed_samples,
             test_state=state,
@@ -150,12 +199,60 @@ class CampaignManager:
             alpha_name=campaign.alpha_name,
             stage=campaign.stage,
             allocated_probe_budget=allocated,
+            family_probe_weight=campaign.family_probe_weight,
             spent_budget=campaign.spent_budget,
             confirmed_samples=campaign.confirmed_samples,
             test_state=campaign.test_state,
         )
         self.campaigns[key] = updated
         return updated
+
+    def allocate_family_probe_budgets(
+        self,
+        *,
+        total_budget: float,
+        bucket_health_by_alpha: dict[str, float] | None = None,
+        family_probe_weights: dict[str, float] | None = None,
+        default_family_probe_weight: float = 0.10,
+    ) -> dict[str, AlphaCampaign]:
+        if not self.campaigns:
+            return {}
+
+        health_map = {str(key).strip().lower(): float(value) for key, value in (bucket_health_by_alpha or {}).items()}
+        rows: list[tuple[str, AlphaCampaign, float]] = []
+        for alpha_name, campaign in self.campaigns.items():
+            stage_mult = _STAGE_MULTIPLIERS.get(_normalize_stage(campaign.stage), 0.05)
+            health = max(0.0, min(1.0, health_map.get(alpha_name, 1.0)))
+            family_weight = resolve_family_probe_weight(
+                alpha_name,
+                family_probe_weights=family_probe_weights,
+                default_weight=default_family_probe_weight,
+            )
+            weighted_score = stage_mult * health * family_weight
+            rows.append((alpha_name, campaign, weighted_score))
+
+        denominator = sum(score for _, _, score in rows if score > 0)
+        updated_campaigns: dict[str, AlphaCampaign] = {}
+        for alpha_name, campaign, score in rows:
+            allocated = 0.0
+            if denominator > 0 and score > 0:
+                allocated = float(total_budget) * (score / denominator)
+            updated = AlphaCampaign(
+                alpha_name=campaign.alpha_name,
+                stage=campaign.stage,
+                allocated_probe_budget=round(max(0.0, allocated), 6),
+                family_probe_weight=resolve_family_probe_weight(
+                    alpha_name,
+                    family_probe_weights=family_probe_weights,
+                    default_weight=default_family_probe_weight,
+                ),
+                spent_budget=campaign.spent_budget,
+                confirmed_samples=campaign.confirmed_samples,
+                test_state=campaign.test_state,
+            )
+            self.campaigns[alpha_name] = updated
+            updated_campaigns[alpha_name] = updated
+        return updated_campaigns
 
     def should_promote_alpha(
         self,
@@ -220,6 +317,7 @@ class CampaignManager:
             alpha_name=campaign.alpha_name,
             stage=next_stage,
             allocated_probe_budget=campaign.allocated_probe_budget,
+            family_probe_weight=campaign.family_probe_weight,
             spent_budget=campaign.spent_budget,
             confirmed_samples=campaign.confirmed_samples,
             test_state=campaign.test_state,
