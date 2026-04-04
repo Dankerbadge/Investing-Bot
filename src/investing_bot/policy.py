@@ -30,6 +30,8 @@ def choose_entry_action(
     baseline_action: str,
     policy_state: dict[str, ActionPolicyStats] | None = None,
     min_confirmed_samples: int = 20,
+    event_risk_score: float = 0.0,
+    regime_multiplier: float = 1.0,
 ) -> tuple[str, dict[str, float]]:
     """
     Deterministic UCB-style action chooser.
@@ -44,6 +46,8 @@ def choose_entry_action(
     state = policy_state or {}
     totals = sum(max(0, int(state.get(action, ActionPolicyStats(action=action)).broker_confirmed_attempts)) for action in actions)
     exploration_anchor = max(1, totals)
+    event_risk = min(1.0, max(0.0, float(event_risk_score)))
+    regime_mult = min(1.0, max(0.0, float(regime_multiplier)))
 
     scores: dict[str, float] = {}
     for action in actions:
@@ -79,6 +83,14 @@ def choose_entry_action(
         # Require explicit enablement before native walk can dominate selection.
         if action == "native_walk_limit" and confirmed == 0:
             score -= 0.1
+
+        # Event/regime adjustments: prefer skipping or lower-churn styles when risk is elevated.
+        if action not in {"skip", "passive_touch"}:
+            score -= event_risk * 0.20
+            score -= (1.0 - regime_mult) * 0.20
+        if action == "skip":
+            score += event_risk * 0.12
+            score += (1.0 - regime_mult) * 0.12
 
         # Guard against malformed states.
         if attempts < confirmed:

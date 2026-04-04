@@ -4,12 +4,15 @@ from dataclasses import asdict
 from typing import Any
 
 from .deployment_control import compute_deployment_decision
+from .event_context import event_context_penalty, infer_event_context
 from .execution_learning import LearnedExecutionPrior, adjustments_for_candidate
 from .execution_style import choose_execution_style
 from .gating import LiquidityGate, evaluate_liquidity
 from .latency import build_latency_profile, estimate_latency_penalty, latency_kill_switch
 from .models import Candidate, ScoredCandidate
 from .policy import ActionPolicyStats, choose_entry_action
+from .promotion import stage_capital_multiplier
+from .regime import infer_regime_context, regime_penalty
 from .reconciliation import BrokerTruthSnapshot
 from .risk import ConcentrationLimits, select_concentrated_portfolio
 from .scoring import compute_edge_breakdown
@@ -47,6 +50,7 @@ def build_trade_plan(
     max_quote_age_ms: float = 3000.0,
     max_decision_ms: float = 1200.0,
     max_submit_to_ack_ms: float = 5000.0,
+    max_cancel_roundtrip_ms: float = 4000.0,
 ) -> dict[str, Any]:
     def _dedupe_reasons(items: list[str]) -> list[str]:
         deduped: list[str] = []
@@ -55,12 +59,47 @@ def build_trade_plan(
                 deduped.append(item)
         return deduped
 
+    def _normalize_stage(stage_value: str) -> str:
+        stage_text = str(stage_value or "").strip().lower()
+        if not stage_text:
+            return "scaled_1"
+        if stage_text == "scaled":
+            return "scaled_1"
+        return stage_text
+
+    def _per_trade_max_loss_fraction(stage_value: str, risk_class: str, broker_confirmed_exits: int) -> float:
+        stage_norm = _normalize_stage(stage_value)
+        cls = str(risk_class or "defined_risk_long_convexity").strip().lower()
+        if cls == "naked_short_american_single_name":
+            if int(broker_confirmed_exits) < 200:
+                return 0.0
+            return 0.001  # 0.10% NLV
+        if cls in {"credit_spread_defined_risk", "short_premium_defined_risk"}:
+            table = {
+                "probe": 0.001,
+                "scaled_1": 0.003,
+                "scaled_2": 0.005,
+                "scaled_3": 0.0075,
+                "mature": 0.0075,
+            }
+            return table.get(stage_norm, 0.0)
+        table = {
+            "probe": 0.0015,
+            "scaled_1": 0.005,
+            "scaled_2": 0.0075,
+            "scaled_3": 0.01,
+            "mature": 0.01,
+        }
+        return table.get(stage_norm, 0.0)
+
     scored: list[ScoredCandidate] = []
     broker_observed_rpm = 0.0
+    broker_budget_utilization = 0.0
     duplicate_client_ids: set[str] = set()
     duplicate_signatures: set[str] = set()
     if broker_truth_snapshot is not None:
         broker_observed_rpm = float(broker_truth_snapshot.observed_requests_per_minute)
+        broker_budget_utilization = float(broker_truth_snapshot.request_budget_utilization)
         duplicate_client_ids = set(broker_truth_snapshot.duplicate_client_order_ids)
         duplicate_signatures = set(broker_truth_snapshot.duplicate_order_signatures)
     effective_recent_rpm = max(0.0, float(recent_order_requests_per_minute), broker_observed_rpm)
@@ -87,20 +126,37 @@ def build_trade_plan(
         broker_reasons: list[str] = []
         policy_reasons: list[str] = []
         hard_block = False
-        deployment_stage = str(metadata.get("deployment_stage") or "scaled").strip().lower()
+        deployment_stage = _normalize_stage(str(metadata.get("deployment_stage") or "scaled_1"))
+        stream_gap_seconds = float(metadata.get("stream_gap_seconds") or 0.0)
+        daily_pnl_fraction = float(metadata.get("daily_pnl_fraction") or 0.0)
+        event_context = infer_event_context(metadata)
+        regime_context = infer_regime_context(
+            {
+                "vix_level": metadata.get("vix_level"),
+                "put_call_ratio": metadata.get("put_call_ratio"),
+                "macro_regime": metadata.get("macro_regime"),
+                "spread_cost": candidate.spread_cost,
+            }
+        )
+        event_penalty = event_context_penalty(event_context)
+        regime_penalty_value = regime_penalty(regime_context)
+
         deployment_decision = compute_deployment_decision(
             stage=deployment_stage,
             drift_kelly_multiplier=drift_multiplier,
             deployment_capital_multiplier=deployment_multiplier,
             pause_new_entries=pause_new_entries,
+            order_budget_utilization=broker_budget_utilization,
+            stream_gap_seconds=stream_gap_seconds,
+            daily_pnl_fraction=daily_pnl_fraction,
+            regime_multiplier=regime_context.risk_multiplier,
+            event_risk_score=event_context.event_risk_score,
             delayed_quotes_detected=bool(broker_truth_snapshot.delayed_quotes_detected) if broker_truth_snapshot else False,
             request_budget_breached=bool(broker_truth_snapshot.request_budget_breached) if broker_truth_snapshot else False,
             duplicate_order_detected=duplicate_order_detected,
         )
         effective_capital_multiplier = deployment_decision.capital_multiplier
-        stage_multiplier = effective_capital_multiplier / max(1e-9, drift_multiplier * deployment_multiplier) if (
-            drift_multiplier > 0 and deployment_multiplier > 0
-        ) else 0.0
+        stage_multiplier = stage_capital_multiplier(deployment_stage)
 
         style_decision = choose_execution_style(
             candidate=candidate,
@@ -119,6 +175,8 @@ def build_trade_plan(
                 baseline_action=style_decision.style,
                 policy_state=policy_state,
                 min_confirmed_samples=policy_min_confirmed_samples,
+                event_risk_score=event_context.event_risk_score,
+                regime_multiplier=regime_context.risk_multiplier,
             )
         else:
             policy_action = style_decision.style
@@ -131,18 +189,32 @@ def build_trade_plan(
             latency_observation = metadata
         latency_profile = build_latency_profile(latency_observation)
         latency_penalty = estimate_latency_penalty(latency_profile)
+        illiquid_or_multileg = bool(metadata.get("illiquid_or_multileg")) or bool(metadata.get("is_multileg"))
+        soft_quote_age_ms = 1500.0 if illiquid_or_multileg else 750.0
+        hard_quote_age_ms = 2500.0 if illiquid_or_multileg else 1500.0
+        soft_submit_to_ack_ms = 1500.0
+        hard_submit_to_ack_ms = min(max_submit_to_ack_ms, 3000.0)
+        soft_cancel_roundtrip_ms = 2500.0
+        hard_cancel_roundtrip_ms = min(max_cancel_roundtrip_ms, 4000.0)
+        if latency_profile.quote_age_ms > soft_quote_age_ms:
+            latency_penalty += 0.004
+        if latency_profile.submit_to_ack_ms > soft_submit_to_ack_ms:
+            latency_penalty += 0.003
+        if latency_profile.cancel_roundtrip_ms > soft_cancel_roundtrip_ms:
+            latency_penalty += 0.002
         latency_blocked, latency_reasons = latency_kill_switch(
             latency_profile,
-            max_quote_age_ms=max_quote_age_ms,
+            max_quote_age_ms=min(max_quote_age_ms, hard_quote_age_ms),
             max_decision_ms=max_decision_ms,
-            max_submit_to_ack_ms=max_submit_to_ack_ms,
+            max_submit_to_ack_ms=hard_submit_to_ack_ms,
+            max_cancel_roundtrip_ms=hard_cancel_roundtrip_ms,
         )
 
         risk_penalty = max(
             0.0,
             float(metadata.get("pre_trade_risk_penalty") or metadata.get("risk_penalty") or 0.0),
         )
-        risk_penalty += latency_penalty
+        risk_penalty += latency_penalty + event_penalty + regime_penalty_value
 
         if require_broker_truth_clean and broker_truth_snapshot is not None:
             if broker_truth_snapshot.delayed_quotes_detected:
@@ -206,6 +278,31 @@ def build_trade_plan(
         ):
             kelly_used = 0.0
         target_notional = notional_from_fraction(bankroll=bankroll, fraction=kelly_used)
+
+        # Stage-specific sizing caps from controlled-live policy.
+        broker_confirmed_exits = int(metadata.get("broker_confirmed_exits") or 0)
+        risk_class = str(metadata.get("risk_class") or "defined_risk_long_convexity")
+        per_trade_max_loss_fraction = _per_trade_max_loss_fraction(
+            deployment_stage,
+            risk_class,
+            broker_confirmed_exits,
+        )
+        per_trade_cap_notional = 0.0
+        if per_trade_max_loss_fraction > 0.0:
+            per_trade_cap_notional = (bankroll * per_trade_max_loss_fraction) / max(1.0, float(candidate.loss_multiple))
+        if deployment_stage == "probe":
+            contract_notional = float(metadata.get("contract_notional") or max(1.0, candidate.reference_price * 100.0))
+            if per_trade_cap_notional > 0:
+                per_trade_cap_notional = min(per_trade_cap_notional, contract_notional)
+            else:
+                per_trade_cap_notional = contract_notional
+        if per_trade_cap_notional <= 0.0:
+            kelly_used = 0.0
+            target_notional = 0.0
+        elif target_notional > per_trade_cap_notional:
+            target_notional = round(per_trade_cap_notional, 2)
+            kelly_used = min(kelly_used, max(0.0, target_notional / bankroll))
+
         expected_holding_minutes = float(candidate.metadata.get("expected_holding_minutes") or 60.0)
         expected_holding_minutes = max(1.0, expected_holding_minutes)
         capital_minutes = max(1.0, target_notional * expected_holding_minutes)

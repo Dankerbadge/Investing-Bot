@@ -115,6 +115,7 @@ def latency_kill_switch(
     max_quote_age_ms: float = 3000.0,
     max_decision_ms: float = 1200.0,
     max_submit_to_ack_ms: float = 5000.0,
+    max_cancel_roundtrip_ms: float = 4000.0,
 ) -> tuple[bool, list[str]]:
     reasons: list[str] = []
     if profile.quote_age_ms > max_quote_age_ms:
@@ -123,6 +124,8 @@ def latency_kill_switch(
         reasons.append("latency_decision_exceeded")
     if profile.submit_to_ack_ms > max_submit_to_ack_ms:
         reasons.append("latency_submit_ack_exceeded")
+    if profile.cancel_roundtrip_ms > max_cancel_roundtrip_ms:
+        reasons.append("latency_cancel_roundtrip_exceeded")
     if profile.stale_quote:
         reasons.append("latency_stale_quote")
     return (len(reasons) > 0), reasons

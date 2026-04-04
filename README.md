@@ -26,7 +26,8 @@ This repo now includes a working Python starter focused on the highest-ROI path:
 19. Native walk-limit is only selectable when API executability is explicitly verified.
 20. Stream subscription manager to avoid duplicate churn and maintain deterministic stream reconciliation.
 21. Latency profile and kill-switch path to block stale/slow decisions before capital is deployed.
-22. Promotion/deployment control layer for `disabled -> shadow -> probe -> scaled` action buckets.
+22. Promotion/deployment control layer for `disabled -> shadow -> probe -> scaled_1 -> scaled_2 -> scaled_3 -> mature` action buckets.
+23. Event/regime context integration (`SEC` filing windows + `FRED/Cboe` regime tags) feeding policy, promotion, and deployment controls.
 
 ## Package Layout
 - `src/investing_bot/scoring.py`: net executable edge formula.
@@ -49,6 +50,8 @@ This repo now includes a working Python starter focused on the highest-ROI path:
 - `src/investing_bot/promotion.py`: promotion/demotion rules for live deployment stages.
 - `src/investing_bot/deployment_control.py`: capital multiplier and pause decisions from stage + drift + broker risk.
 - `src/investing_bot/capabilities.py`: broker/API capability registry and action gating.
+- `src/investing_bot/event_context.py`: filing/earnings/macro/ex-dividend event risk tagging.
+- `src/investing_bot/regime.py`: volatility/liquidity/macro/crowding regime tagging.
 
 ## Core Score
 ```python

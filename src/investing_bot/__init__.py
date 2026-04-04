@@ -11,6 +11,7 @@ from .calibration import (
     summarize_fill_calibration,
 )
 from .deployment_control import DeploymentDecision, compute_deployment_decision
+from .event_context import EventContext, event_context_penalty, event_context_reasons, infer_event_context
 from .exit_policy import ExitDecision, choose_exit_action
 from .execution_learning import LearnedExecutionPrior, adjustments_for_candidate, learn_execution_priors
 from .execution_style import ExecutionStyleDecision, choose_execution_style
@@ -20,6 +21,7 @@ from .models import Candidate, ScoredCandidate, SelectedTrade
 from .pipeline import build_trade_plan
 from .policy import ActionPolicyStats, choose_entry_action, default_policy_actions, update_entry_policy
 from .promotion import BucketPromotionMetrics, PromotionPolicy, evaluate_stage_transition, stage_capital_multiplier
+from .regime import RegimeContext, infer_regime_context, regime_penalty, regime_reasons
 from .reconciliation import (
     BrokerTruthSnapshot,
     OrderLifecycle,
@@ -49,6 +51,7 @@ __all__ = [
     "CounterfactualAttribution",
     "DeploymentDecision",
     "ExecutionStyleDecision",
+    "EventContext",
     "ExitDecision",
     "LearnedExecutionPrior",
     "LatencyProfile",
@@ -56,6 +59,7 @@ __all__ = [
     "OrderLifecycle",
     "OrderStatusTruth",
     "PromotionPolicy",
+    "RegimeContext",
     "ReliabilityBin",
     "ScoredCandidate",
     "SelectedTrade",
@@ -74,6 +78,8 @@ __all__ = [
     "compute_drift_kelly_multiplier",
     "compute_net_executable_edge",
     "choose_execution_style",
+    "event_context_penalty",
+    "event_context_reasons",
     "default_policy_actions",
     "dynamic_fractional_kelly_fraction",
     "estimate_latency_penalty",
@@ -81,6 +87,8 @@ __all__ = [
     "evaluate_liquidity",
     "fractional_kelly_fraction",
     "full_kelly_fraction",
+    "infer_event_context",
+    "infer_regime_context",
     "learn_execution_priors",
     "latency_kill_switch",
     "notional_from_fraction",
@@ -88,6 +96,8 @@ __all__ = [
     "reconcile_order_lifecycle",
     "resolve_order_status",
     "reliability_bins",
+    "regime_penalty",
+    "regime_reasons",
     "select_concentrated_portfolio",
     "should_pause_trading",
     "stage_capital_multiplier",

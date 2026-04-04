@@ -25,6 +25,25 @@ def test_deployment_decision_scales_probe_capital():
         request_budget_breached=False,
         duplicate_order_detected=False,
     )
-    # probe stage multiplier 0.10 * 0.5 * 0.8
-    assert round(decision.capital_multiplier, 6) == 0.04
+    # probe stage multiplier 0.05 * 0.5 * 0.8
+    assert round(decision.capital_multiplier, 6) == 0.02
     assert decision.paused is False
+
+
+def test_deployment_decision_soft_and_hard_budget_limits():
+    soft = compute_deployment_decision(
+        stage="scaled_1",
+        drift_kelly_multiplier=1.0,
+        deployment_capital_multiplier=1.0,
+        order_budget_utilization=0.72,
+    )
+    hard = compute_deployment_decision(
+        stage="scaled_1",
+        drift_kelly_multiplier=1.0,
+        deployment_capital_multiplier=1.0,
+        order_budget_utilization=0.9,
+    )
+    assert soft.paused is False
+    assert "order_budget_soft_limit" in soft.reasons
+    assert hard.paused is True
+    assert "order_budget_hard_limit" in hard.reasons

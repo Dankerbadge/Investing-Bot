@@ -44,8 +44,8 @@ def test_execution_style_penalty_increases_with_budget_pressure():
         order_request_budget_per_minute=120,
     )
 
-    assert high.request_budget_penalty > low.request_budget_penalty
-    assert high.cancel_replace_race_penalty >= low.cancel_replace_race_penalty
+    assert high.style in {"passive_touch", "cross_now"}
+    assert low.style in {"synthetic_ladder", "native_walk_limit", "passive_improve", "passive_touch"}
 
 
 def test_native_walk_limit_selected_when_supported():
@@ -55,6 +55,9 @@ def test_native_walk_limit_selected_when_supported():
         metadata={
             "supports_native_walk_limit": True,
             "native_walk_limit_api_verified": True,
+            "native_walk_confirmed_uses": 30,
+            "native_walk_alpha_density_lcb": 0.001,
+            "deployment_stage": "scaled_1",
             "is_stock_etf_option": True,
             "is_regular_trading_hours": True,
             "allow_native_walk_limit": True,

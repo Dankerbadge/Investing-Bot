@@ -50,20 +50,54 @@ def choose_execution_style(
     in_regular_hours = bool(metadata.get("is_regular_trading_hours", True))
     allow_native_walk = bool(metadata.get("allow_native_walk_limit", True))
     allow_synthetic_ladder = bool(metadata.get("allow_synthetic_ladder", True))
+    latency_degrading = bool(metadata.get("latency_degrading"))
+    time_sensitive_boundary = bool(metadata.get("time_sensitive_boundary"))
+    spread_percentile = float(metadata.get("spread_percentile") or 0.5)
+    cancel_ack_p95_ms = float(metadata.get("cancel_ack_p95_ms") or 0.0)
+    duplicate_incidents_last_5 = int(metadata.get("duplicate_order_incidents_last_5_sessions") or 0)
+    budget_headroom = max(0.0, 1.0 - pressure)
+    native_walk_confirmed_uses = int(metadata.get("native_walk_confirmed_uses") or 0)
+    native_walk_alpha_density_lcb = float(metadata.get("native_walk_alpha_density_lcb") or 0.0)
+    deployment_stage = str(metadata.get("deployment_stage") or "").strip().lower()
+    stage_rank = {
+        "probe": 0,
+        "scaled": 1,
+        "scaled_1": 1,
+        "scaled_2": 2,
+        "scaled_3": 3,
+        "mature": 4,
+    }.get(deployment_stage, 1)
+
+    native_walk_maturity_ok = (native_walk_confirmed_uses >= 25 and native_walk_alpha_density_lcb > 0.0)
 
     if adjusted_edge <= 0:
         style = "passive_touch"
+    elif (latency_degrading or time_sensitive_boundary) and spread_percentile <= 0.35:
+        style = "cross_now"
     elif spread <= 0.01 and fill_prob >= 0.75 and quote_age <= 2.0:
         style = "passive_touch"
-    elif spread <= 0.025 and fill_prob >= 0.60 and confidence >= 0.6:
+    elif spread <= 0.02 and fill_prob >= 0.55 and confidence >= 0.6:
         style = "passive_improve"
     elif spread <= 0.05 and fill_prob >= 0.45:
-        if supports_native_walk and native_walk_verified and in_regular_hours and not delayed_quotes and allow_native_walk:
+        if (
+            supports_native_walk
+            and native_walk_verified
+            and in_regular_hours
+            and not delayed_quotes
+            and allow_native_walk
+            and stage_rank >= 1
+            and native_walk_maturity_ok
+        ):
             style = "native_walk_limit"
-        elif allow_synthetic_ladder:
+        elif (
+            allow_synthetic_ladder
+            and budget_headroom > 0.50
+            and (cancel_ack_p95_ms <= 0 or cancel_ack_p95_ms < 2500.0)
+            and duplicate_incidents_last_5 == 0
+        ):
             style = "synthetic_ladder"
         else:
-            style = "cross_now"
+            style = "passive_touch"
     else:
         style = "cross_now"
 
@@ -72,9 +106,9 @@ def choose_execution_style(
     expected_replace_count = 0
 
     # When request budget is near exhaustion, avoid churn-heavy paths.
-    if pressure >= 0.98 and style in {"synthetic_ladder", "native_walk_limit"}:
+    if pressure >= 0.85 and style in {"synthetic_ladder", "native_walk_limit"}:
         style = "cross_now"
-    elif pressure >= 0.95 and style == "synthetic_ladder":
+    elif pressure >= 0.70 and style == "synthetic_ladder":
         style = "passive_touch"
 
     if style == "synthetic_ladder":
