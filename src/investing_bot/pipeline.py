@@ -123,6 +123,9 @@ def build_trade_plan(
                 execution_style=style_decision.style,
                 request_budget_penalty=round(style_decision.request_budget_penalty, 6),
                 cancel_replace_race_penalty=round(style_decision.cancel_replace_race_penalty, 6),
+                execution_adjusted_edge=round(edge.adjusted_net_edge, 6),
+                style_adjusted_edge=round(edge_after_style, 6),
+                risk_adjusted_edge=round(edge_after_style, 6),
             )
         )
 
@@ -159,6 +162,9 @@ def build_trade_plan(
                 "execution_style": row.execution_style,
                 "request_budget_penalty": row.request_budget_penalty,
                 "cancel_replace_race_penalty": row.cancel_replace_race_penalty,
+                "execution_adjusted_edge": row.execution_adjusted_edge,
+                "style_adjusted_edge": row.style_adjusted_edge,
+                "risk_adjusted_edge": row.risk_adjusted_edge,
                 "executable": row.executable,
                 "gate_reasons": list(row.gate_reasons),
             }

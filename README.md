@@ -16,6 +16,8 @@ This repo now includes a working Python starter focused on the highest-ROI path:
 9. Source-segregated execution learning (`live` / `paper` / `ghost`) with hierarchical bucket shrinkage.
 10. Alpha-density ranking and execution-style optimization with request-budget penalties.
 11. Contract-hygiene kill switches for adjusted/nonstandard/locked-or-crossed options.
+12. Broker-truth reconciliation for order lifecycle and delayed-quote detection.
+13. Calibration metrics (Brier score, pinball loss, reliability bins) for execution-learning quality.
 
 ## Package Layout
 - `src/investing_bot/scoring.py`: net executable edge formula.
@@ -27,6 +29,8 @@ This repo now includes a working Python starter focused on the highest-ROI path:
 - `src/investing_bot/execution_learning.py`: learns execution priors from your archive.
 - `src/investing_bot/execution_style.py`: chooses entry style and applies request/race penalties.
 - `src/investing_bot/attribution.py`: per-trade counterfactual PnL decomposition.
+- `src/investing_bot/reconciliation.py`: reconciles order lifecycle from broker/account events.
+- `src/investing_bot/calibration.py`: fill/slippage calibration metrics and reliability summaries.
 - `src/investing_bot/pipeline.py`: end-to-end plan builder.
 
 ## Core Score

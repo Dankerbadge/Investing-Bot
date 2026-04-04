@@ -77,3 +77,17 @@ def test_pipeline_ranks_by_alpha_density_not_raw_edge():
 
     assert result["selected_count"] == 1
     assert result["selected"][0]["ticker"] == "QQQ-FAST"
+
+
+def test_pipeline_exposes_staged_edge_fields():
+    result = build_trade_plan(
+        candidates=[_candidate("SPY-A", "SPY", "event-1", 0.065)],
+        bankroll=10000,
+        gate=LiquidityGate(),
+        limits=ConcentrationLimits(max_open_positions=1, max_per_underlying=1, max_per_event=1),
+    )
+
+    row = result["scored"][0]
+    assert "execution_adjusted_edge" in row
+    assert "style_adjusted_edge" in row
+    assert "risk_adjusted_edge" in row

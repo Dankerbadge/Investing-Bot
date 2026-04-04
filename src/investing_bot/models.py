@@ -48,6 +48,9 @@ class ScoredCandidate:
     execution_style: str = "passive_touch"
     request_budget_penalty: float = 0.0
     cancel_replace_race_penalty: float = 0.0
+    execution_adjusted_edge: float = 0.0
+    style_adjusted_edge: float = 0.0
+    risk_adjusted_edge: float = 0.0
 
 
 @dataclass(frozen=True)
