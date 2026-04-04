@@ -24,6 +24,9 @@ This repo now includes a working Python starter focused on the highest-ROI path:
 17. Exit policy engine scaffold (assignment/drift/quote-quality aware).
 18. Drift governor to auto-reduce Kelly during calibration stress.
 19. Native walk-limit is only selectable when API executability is explicitly verified.
+20. Stream subscription manager to avoid duplicate churn and maintain deterministic stream reconciliation.
+21. Latency profile and kill-switch path to block stale/slow decisions before capital is deployed.
+22. Promotion/deployment control layer for `disabled -> shadow -> probe -> scaled` action buckets.
 
 ## Package Layout
 - `src/investing_bot/scoring.py`: net executable edge formula.
@@ -41,6 +44,11 @@ This repo now includes a working Python starter focused on the highest-ROI path:
 - `src/investing_bot/exit_policy.py`: exit/hedge decision policy scaffold.
 - `src/investing_bot/pipeline.py`: end-to-end plan builder.
 - `src/investing_bot/ghost_broker.py`: style-aware fill simulation (passive, native walk, synthetic ladder, cross).
+- `src/investing_bot/stream_manager.py`: serialized stream subscription reconciliation.
+- `src/investing_bot/latency.py`: latency decomposition and latency kill switches.
+- `src/investing_bot/promotion.py`: promotion/demotion rules for live deployment stages.
+- `src/investing_bot/deployment_control.py`: capital multiplier and pause decisions from stage + drift + broker risk.
+- `src/investing_bot/capabilities.py`: broker/API capability registry and action gating.
 
 ## Core Score
 ```python

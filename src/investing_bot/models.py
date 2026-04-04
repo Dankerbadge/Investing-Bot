@@ -47,11 +47,16 @@ class ScoredCandidate:
     alpha_density: float = 0.0
     execution_style: str = "passive_touch"
     policy_action: str = "trade"
+    deployment_stage: str = "scaled"
     expected_replace_count: int = 0
     live_prior_cap_penalty: float = 0.0
     request_budget_penalty: float = 0.0
     cancel_replace_race_penalty: float = 0.0
     drift_kelly_multiplier: float = 1.0
+    stage_capital_multiplier: float = 1.0
+    deployment_capital_multiplier: float = 1.0
+    effective_capital_multiplier: float = 1.0
+    latency_penalty: float = 0.0
     risk_penalty: float = 0.0
     execution_adjusted_edge: float = 0.0
     style_adjusted_edge: float = 0.0

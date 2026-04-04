@@ -99,6 +99,14 @@ def test_pipeline_exposes_staged_edge_fields():
 def test_pipeline_applies_risk_penalty_after_style_stage():
     candidate = _candidate("SPY-RISK", "SPY", "event-1", 0.08)
     candidate.metadata["pre_trade_risk_penalty"] = 0.02
+    candidate.metadata["latency_observation"] = {
+        "quote_age_ms": 500,
+        "decision_ms": 400,
+        "submit_to_ack_ms": 800,
+        "decision_start": "2026-04-04T10:00:00Z",
+        "decision_end": "2026-04-04T10:00:00.400000Z",
+        "submit_time": "2026-04-04T10:00:01Z",
+    }
 
     result = build_trade_plan(
         candidates=[candidate],
@@ -107,7 +115,7 @@ def test_pipeline_applies_risk_penalty_after_style_stage():
         limits=ConcentrationLimits(max_open_positions=1, max_per_underlying=1, max_per_event=1),
     )
     row = result["scored"][0]
-    assert row["risk_penalty"] == 0.02
+    assert row["risk_penalty"] >= 0.02
     assert row["risk_adjusted_edge"] < row["style_adjusted_edge"]
 
 
@@ -201,3 +209,39 @@ def test_pipeline_policy_can_force_skip():
     assert row["policy_action"] == "skip"
     assert row["kelly_used"] == 0.0
     assert "policy_skip" in row["gate_reasons"]
+
+
+def test_pipeline_shadow_stage_forces_zero_capital():
+    candidate = _candidate("SPY-SHADOW", "SPY", "event-1", 0.08)
+    candidate.metadata["deployment_stage"] = "shadow"
+
+    result = build_trade_plan(
+        candidates=[candidate],
+        bankroll=10000,
+        gate=LiquidityGate(),
+        limits=ConcentrationLimits(max_open_positions=1, max_per_underlying=1, max_per_event=1),
+    )
+    row = result["scored"][0]
+    assert row["effective_capital_multiplier"] == 0.0
+    assert row["kelly_used"] == 0.0
+    assert "drift_guard_paused" in row["gate_reasons"]
+
+
+def test_pipeline_latency_kill_switch_blocks_entry():
+    candidate = _candidate("SPY-LAT", "SPY", "event-1", 0.08)
+    candidate.metadata["latency_observation"] = {
+        "quote_age_ms": 4500,
+        "decision_ms": 2000,
+        "submit_to_ack_ms": 6500,
+    }
+
+    result = build_trade_plan(
+        candidates=[candidate],
+        bankroll=10000,
+        gate=LiquidityGate(),
+        limits=ConcentrationLimits(max_open_positions=1, max_per_underlying=1, max_per_event=1),
+    )
+    row = result["scored"][0]
+    assert row["kelly_used"] == 0.0
+    assert row["latency_penalty"] > 0.0
+    assert "latency_quote_age_exceeded" in row["gate_reasons"]

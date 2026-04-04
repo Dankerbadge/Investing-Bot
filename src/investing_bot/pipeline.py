@@ -3,9 +3,11 @@ from __future__ import annotations
 from dataclasses import asdict
 from typing import Any
 
+from .deployment_control import compute_deployment_decision
 from .execution_learning import LearnedExecutionPrior, adjustments_for_candidate
 from .execution_style import choose_execution_style
 from .gating import LiquidityGate, evaluate_liquidity
+from .latency import build_latency_profile, estimate_latency_penalty, latency_kill_switch
 from .models import Candidate, ScoredCandidate
 from .policy import ActionPolicyStats, choose_entry_action
 from .reconciliation import BrokerTruthSnapshot
@@ -33,6 +35,8 @@ def build_trade_plan(
     use_dynamic_kelly: bool = True,
     drawdown_fraction: float = 0.0,
     drift_kelly_multiplier: float = 1.0,
+    deployment_capital_multiplier: float = 1.0,
+    pause_new_entries: bool = False,
     enforce_live_prior_size_cap: bool = True,
     policy_state: dict[str, ActionPolicyStats] | None = None,
     policy_min_confirmed_samples: int = 20,
@@ -40,6 +44,9 @@ def build_trade_plan(
     order_request_budget_per_minute: float = 120.0,
     broker_truth_snapshot: BrokerTruthSnapshot | None = None,
     require_broker_truth_clean: bool = True,
+    max_quote_age_ms: float = 3000.0,
+    max_decision_ms: float = 1200.0,
+    max_submit_to_ack_ms: float = 5000.0,
 ) -> dict[str, Any]:
     def _dedupe_reasons(items: list[str]) -> list[str]:
         deduped: list[str] = []
@@ -58,6 +65,8 @@ def build_trade_plan(
         duplicate_signatures = set(broker_truth_snapshot.duplicate_order_signatures)
     effective_recent_rpm = max(0.0, float(recent_order_requests_per_minute), broker_observed_rpm)
     drift_multiplier = min(1.0, max(0.0, float(drift_kelly_multiplier)))
+    deployment_multiplier = min(1.0, max(0.0, float(deployment_capital_multiplier)))
+    duplicate_order_detected = bool(duplicate_client_ids or duplicate_signatures)
 
     for candidate in candidates:
         adjustments = adjustments_for_candidate(candidate, execution_priors)
@@ -78,6 +87,21 @@ def build_trade_plan(
         broker_reasons: list[str] = []
         policy_reasons: list[str] = []
         hard_block = False
+        deployment_stage = str(metadata.get("deployment_stage") or "scaled").strip().lower()
+        deployment_decision = compute_deployment_decision(
+            stage=deployment_stage,
+            drift_kelly_multiplier=drift_multiplier,
+            deployment_capital_multiplier=deployment_multiplier,
+            pause_new_entries=pause_new_entries,
+            delayed_quotes_detected=bool(broker_truth_snapshot.delayed_quotes_detected) if broker_truth_snapshot else False,
+            request_budget_breached=bool(broker_truth_snapshot.request_budget_breached) if broker_truth_snapshot else False,
+            duplicate_order_detected=duplicate_order_detected,
+        )
+        effective_capital_multiplier = deployment_decision.capital_multiplier
+        stage_multiplier = effective_capital_multiplier / max(1e-9, drift_multiplier * deployment_multiplier) if (
+            drift_multiplier > 0 and deployment_multiplier > 0
+        ) else 0.0
+
         style_decision = choose_execution_style(
             candidate=candidate,
             adjusted_edge=execution_adjusted_edge,
@@ -102,10 +126,23 @@ def build_trade_plan(
             policy_reasons.append("policy_skip")
             style_adjusted_edge = min(0.0, style_adjusted_edge)
 
+        latency_observation = metadata.get("latency_observation")
+        if not isinstance(latency_observation, dict):
+            latency_observation = metadata
+        latency_profile = build_latency_profile(latency_observation)
+        latency_penalty = estimate_latency_penalty(latency_profile)
+        latency_blocked, latency_reasons = latency_kill_switch(
+            latency_profile,
+            max_quote_age_ms=max_quote_age_ms,
+            max_decision_ms=max_decision_ms,
+            max_submit_to_ack_ms=max_submit_to_ack_ms,
+        )
+
         risk_penalty = max(
             0.0,
             float(metadata.get("pre_trade_risk_penalty") or metadata.get("risk_penalty") or 0.0),
         )
+        risk_penalty += latency_penalty
 
         if require_broker_truth_clean and broker_truth_snapshot is not None:
             if broker_truth_snapshot.delayed_quotes_detected:
@@ -128,7 +165,7 @@ def build_trade_plan(
                 hard_block = True
 
         risk_adjusted_edge = style_adjusted_edge - risk_penalty
-        if hard_block:
+        if hard_block or latency_blocked or deployment_decision.paused:
             risk_adjusted_edge = min(0.0, risk_adjusted_edge)
 
         kelly_full = full_kelly_fraction(
@@ -157,9 +194,16 @@ def build_trade_plan(
                 min_fraction=0.0,
                 max_fraction=max_kelly_used,
             )
-        kelly_used *= drift_multiplier
+        kelly_used *= effective_capital_multiplier
 
-        if risk_adjusted_edge <= 0 or not passes_gate or hard_block or policy_action == "skip":
+        if (
+            risk_adjusted_edge <= 0
+            or not passes_gate
+            or hard_block
+            or latency_blocked
+            or deployment_decision.paused
+            or policy_action == "skip"
+        ):
             kelly_used = 0.0
         target_notional = notional_from_fraction(bankroll=bankroll, fraction=kelly_used)
         expected_holding_minutes = float(candidate.metadata.get("expected_holding_minutes") or 60.0)
@@ -172,6 +216,8 @@ def build_trade_plan(
         gate_reasons = list(reasons)
         gate_reasons.extend(broker_reasons)
         gate_reasons.extend(policy_reasons)
+        gate_reasons.extend(latency_reasons)
+        gate_reasons.extend(list(deployment_decision.reasons))
         if live_cap_penalty > 0:
             gate_reasons.append("live_prior_size_cap_applied")
         if risk_adjusted_edge <= 0:
@@ -188,7 +234,9 @@ def build_trade_plan(
             gate_reasons.append("liquidity_gate_failed")
         if hard_block:
             gate_reasons.append("hard_risk_block")
-        if drift_multiplier <= 0.0:
+        if deployment_decision.paused:
+            gate_reasons.append("deployment_paused")
+        if effective_capital_multiplier <= 0.0:
             gate_reasons.append("drift_guard_paused")
 
         gate_reasons = _dedupe_reasons(gate_reasons)
@@ -220,11 +268,16 @@ def build_trade_plan(
                 alpha_density=round(alpha_density, 10),
                 execution_style=style_decision.style,
                 policy_action=policy_action,
+                deployment_stage=deployment_stage,
                 expected_replace_count=max(0, int(style_decision.expected_replace_count)),
                 live_prior_cap_penalty=round(live_cap_penalty, 6),
                 request_budget_penalty=round(style_decision.request_budget_penalty, 6),
                 cancel_replace_race_penalty=round(style_decision.cancel_replace_race_penalty, 6),
                 drift_kelly_multiplier=round(drift_multiplier, 6),
+                stage_capital_multiplier=round(stage_multiplier, 6),
+                deployment_capital_multiplier=round(deployment_multiplier, 6),
+                effective_capital_multiplier=round(effective_capital_multiplier, 6),
+                latency_penalty=round(latency_penalty, 6),
                 risk_penalty=round(risk_penalty, 6),
                 execution_adjusted_edge=round(execution_adjusted_edge, 6),
                 style_adjusted_edge=round(style_adjusted_edge, 6),
@@ -264,11 +317,16 @@ def build_trade_plan(
                 "alpha_density": row.alpha_density,
                 "execution_style": row.execution_style,
                 "policy_action": row.policy_action,
+                "deployment_stage": row.deployment_stage,
                 "expected_replace_count": row.expected_replace_count,
                 "live_prior_cap_penalty": row.live_prior_cap_penalty,
                 "request_budget_penalty": row.request_budget_penalty,
                 "cancel_replace_race_penalty": row.cancel_replace_race_penalty,
                 "drift_kelly_multiplier": row.drift_kelly_multiplier,
+                "stage_capital_multiplier": row.stage_capital_multiplier,
+                "deployment_capital_multiplier": row.deployment_capital_multiplier,
+                "effective_capital_multiplier": row.effective_capital_multiplier,
+                "latency_penalty": row.latency_penalty,
                 "risk_penalty": row.risk_penalty,
                 "execution_adjusted_edge": row.execution_adjusted_edge,
                 "style_adjusted_edge": row.style_adjusted_edge,
