@@ -46,6 +46,7 @@ This repo now includes a working Python starter focused on the highest-ROI path:
 39. Family-weighted probe-budget allocation and broker-confirmed-live challenger gating for promotion.
 40. Split shadow-vs-capital alpha lanes, family/style-local challenger scope, adaptive family reweighting, and evidence-universe segmentation.
 41. Signal arbitration, structure selection, deterministic session orchestration, and hierarchical evidence pooling for cleaner live deployment.
+42. Scientific-control layer with broker-confirmed baseline comparisons, component ablation studies, and daily family/universe report cards (`baselines.py` + `ablation.py` + `report_cards.py`).
 
 ## Package Layout
 - `src/investing_bot/scoring.py`: net executable edge formula.
@@ -103,6 +104,9 @@ This repo now includes a working Python starter focused on the highest-ROI path:
 - `src/investing_bot/preflight.py`: quote freshness, stream-gap, and request-budget preflight checks.
 - `src/investing_bot/session_orchestrator.py`: serial session-phase orchestration with stream reconciliation and preflight gating.
 - `src/investing_bot/evidence_pool.py`: hierarchical evidence shrinkage (`universe -> family -> global`) with live-capital non-boost safeguards.
+- `src/investing_bot/baselines.py`: broker-confirmed baseline controls (`cross_now`, `passive_touch`, `fixed_vertical`, `skip`) for live-vs-control edge comparison.
+- `src/investing_bot/ablation.py`: replay/shadow ablation scenarios to test the incremental value of arbiter/structure/evidence/event-regime layers.
+- `src/investing_bot/report_cards.py`: daily family/universe scorecards and promotion-readiness summaries from broker-confirmed outcomes.
 
 ## Core Score
 ```python

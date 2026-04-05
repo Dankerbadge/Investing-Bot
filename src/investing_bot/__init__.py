@@ -18,6 +18,14 @@ from .allocator import (
 )
 from .archive import ArchiveWriter
 from .attribution import CounterfactualAttribution, compute_counterfactual_attribution
+from .ablation import AblationResult, AblationScenario, AblationStudy, run_ablation_study
+from .baselines import (
+    BaselineComparison,
+    BaselinePerformance,
+    BaselineSuite,
+    compare_to_baselines,
+    evaluate_baseline_performance,
+)
 from .bucket_health import BucketHealth, BucketHealthThresholds, evaluate_bucket_health, summarize_bucket_health
 from .calibration import (
     ReliabilityBin,
@@ -113,6 +121,7 @@ from .recovery import (
     require_broker_parity_before_entries,
 )
 from .regime import RegimeContext, infer_regime_context, regime_penalty, regime_reasons
+from .report_cards import FamilyUniverseReportCard, ReportCardBundle, build_report_cards, summarize_report_cards
 from .replay import ReplayResult, replay_archive_stream, replay_records
 from .risk import ConcentrationLimits, select_concentrated_portfolio
 from .ruin_guard import RuinGuardDecision, compute_ruin_guard
@@ -149,6 +158,9 @@ from .universe_builder import (
 
 __all__ = [
     "ActionPolicyStats",
+    "AblationResult",
+    "AblationScenario",
+    "AblationStudy",
     "Alert",
     "AlertThresholds",
     "AllocatedTrade",
@@ -164,6 +176,9 @@ __all__ = [
     "BucketHealth",
     "BucketHealthThresholds",
     "BucketPromotionMetrics",
+    "BaselineComparison",
+    "BaselinePerformance",
+    "BaselineSuite",
     "CampaignDecision",
     "CampaignManager",
     "Candidate",
@@ -182,6 +197,7 @@ __all__ = [
     "EvidencePool",
     "EvidenceRecord",
     "FamilyBudgetEvidence",
+    "FamilyUniverseReportCard",
     "EventContext",
     "ExecutionAudit",
     "ExecutionAuditSummary",
@@ -213,6 +229,7 @@ __all__ = [
     "PreflightResult",
     "PromotionPolicy",
     "PromotionReport",
+    "ReportCardBundle",
     "RecoveryState",
     "RegimeContext",
     "ReplayResult",
@@ -249,6 +266,7 @@ __all__ = [
     "build_feature_payload",
     "build_latency_profile",
     "build_ops_dashboard",
+    "build_report_cards",
     "build_trade_plan",
     "build_tradable_universe",
     "choose_entry_action",
@@ -265,6 +283,7 @@ __all__ = [
     "compute_net_executable_edge",
     "compute_portfolio_state",
     "compute_ruin_guard",
+    "compare_to_baselines",
     "corporate_action_hard_block",
     "corporate_action_penalty",
     "corporate_action_reasons",
@@ -277,6 +296,7 @@ __all__ = [
     "determine_session_phase",
     "estimate_latency_penalty",
     "evaluate_bucket_health",
+    "evaluate_baseline_performance",
     "evaluate_challenger_dr",
     "evaluate_challenger_ips",
     "evaluate_liquidity",
@@ -325,6 +345,7 @@ __all__ = [
     "replay_records",
     "require_broker_parity_before_entries",
     "resolve_order_status",
+    "run_ablation_study",
     "run_preflight_checks",
     "run_chaos_suite",
     "rows_for_alpha_family",
@@ -344,6 +365,7 @@ __all__ = [
     "summarize_bucket_health",
     "summarize_execution_audits",
     "summarize_fill_calibration",
+    "summarize_report_cards",
     "thesis_key_for_candidate",
     "update_entry_policy",
     "update_online_policy",
