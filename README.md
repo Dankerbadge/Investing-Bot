@@ -45,6 +45,7 @@ This repo now includes a working Python starter focused on the highest-ROI path:
 38. Point-in-time feature caching and tradable-universe construction (`feature_store.py` + `universe_builder.py`).
 39. Family-weighted probe-budget allocation and broker-confirmed-live challenger gating for promotion.
 40. Split shadow-vs-capital alpha lanes, family/style-local challenger scope, adaptive family reweighting, and evidence-universe segmentation.
+41. Signal arbitration, structure selection, deterministic session orchestration, and hierarchical evidence pooling for cleaner live deployment.
 
 ## Package Layout
 - `src/investing_bot/scoring.py`: net executable edge formula.
@@ -97,6 +98,11 @@ This repo now includes a working Python starter focused on the highest-ROI path:
 - `src/investing_bot/sequential_tests.py`: lower/upper confidence-bound utilities for promote/kill logic.
 - `src/investing_bot/feature_store.py`: point-in-time feature snapshots and merged feature payload helpers.
 - `src/investing_bot/universe_builder.py`: liquidity/instrument-aware universe filtering and family-ready row mapping.
+- `src/investing_bot/signal_arbiter.py`: one-thesis-per-underlying/event-window arbitration for overlapping family intents.
+- `src/investing_bot/structure_selector.py`: defined-risk-aware structure selection by lower-confidence alpha density.
+- `src/investing_bot/preflight.py`: quote freshness, stream-gap, and request-budget preflight checks.
+- `src/investing_bot/session_orchestrator.py`: serial session-phase orchestration with stream reconciliation and preflight gating.
+- `src/investing_bot/evidence_pool.py`: hierarchical evidence shrinkage (`universe -> family -> global`) with live-capital non-boost safeguards.
 
 ## Core Score
 ```python

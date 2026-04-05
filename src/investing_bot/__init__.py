@@ -69,6 +69,7 @@ from .daily_rollup import (
 )
 from .deployment_control import DeploymentDecision, compute_deployment_decision
 from .event_context import EventContext, event_context_penalty, event_context_reasons, infer_event_context
+from .evidence_pool import EvidencePool, EvidenceRecord, PooledEstimate, build_evidence_pool, capped_live_metric
 from .execution_audit import ExecutionAudit, ExecutionAuditSummary, audit_execution_path, summarize_execution_audits
 from .execution_learning import LearnedExecutionPrior, adjustments_for_candidate, learn_execution_priors
 from .execution_style import ExecutionStyleDecision, choose_execution_style
@@ -95,6 +96,7 @@ from .order_spec_verifier import OrderSpecDiff, OrderSpecVerification, verify_or
 from .pipeline import build_trade_plan
 from .policy import ActionPolicyStats, choose_entry_action, default_policy_actions, update_entry_policy
 from .portfolio_state import PortfolioState, PositionState, compute_portfolio_state
+from .preflight import PreflightResult, run_preflight_checks
 from .promotion import BucketPromotionMetrics, PromotionPolicy, evaluate_stage_transition, stage_capital_multiplier
 from .reconciliation import (
     BrokerTruthSnapshot,
@@ -115,6 +117,8 @@ from .replay import ReplayResult, replay_archive_stream, replay_records
 from .risk import ConcentrationLimits, select_concentrated_portfolio
 from .ruin_guard import RuinGuardDecision, compute_ruin_guard
 from .scoring import compute_edge_breakdown, compute_net_executable_edge
+from .session_orchestrator import SessionOrchestrator, SessionPlan, SessionWindows, determine_session_phase
+from .signal_arbiter import ArbitrationResult, ArbitratedSignal, arbitrate_signals, selected_candidates, thesis_key_for_candidate
 from .sizing import (
     dynamic_fractional_kelly_fraction,
     fractional_kelly_fraction,
@@ -122,6 +126,7 @@ from .sizing import (
     notional_from_fraction,
 )
 from .stream_manager import StreamAction, StreamSubscriptionManager
+from .structure_selector import StructureCandidate, StructureDecision, select_structure, structure_score
 from .telemetry import TelemetryPoint, TelemetrySummary, aggregate_telemetry
 from .sequential_tests import (
     SequentialTestState,
@@ -174,6 +179,8 @@ __all__ = [
     "CounterfactualAttribution",
     "DailyRollup",
     "DeploymentDecision",
+    "EvidencePool",
+    "EvidenceRecord",
     "FamilyBudgetEvidence",
     "EventContext",
     "ExecutionAudit",
@@ -198,10 +205,12 @@ __all__ = [
     "OrderStatusTruth",
     "PolicyFact",
     "PolicyPerformance",
+    "PooledEstimate",
     "PortfolioFact",
     "PortfolioLedger",
     "PortfolioState",
     "PositionState",
+    "PreflightResult",
     "PromotionPolicy",
     "PromotionReport",
     "RecoveryState",
@@ -209,11 +218,16 @@ __all__ = [
     "ReplayResult",
     "ReliabilityBin",
     "RuinGuardDecision",
+    "SessionOrchestrator",
+    "SessionPlan",
+    "SessionWindows",
     "ScoredCandidate",
     "SequentialTestState",
     "SelectedTrade",
     "StreamAction",
     "StreamSubscriptionManager",
+    "StructureCandidate",
+    "StructureDecision",
     "TelemetryPoint",
     "TelemetrySummary",
     "TradeFact",
@@ -226,10 +240,12 @@ __all__ = [
     "allocate_probe_budget",
     "assignment_risk_score",
     "audit_execution_path",
+    "arbitrate_signals",
     "brier_score",
     "build_alpha_universe",
     "build_default_alpha_registry",
     "build_daily_rollup",
+    "build_evidence_pool",
     "build_feature_payload",
     "build_latency_profile",
     "build_ops_dashboard",
@@ -239,6 +255,7 @@ __all__ = [
     "choose_execution_style",
     "choose_exit_action",
     "choose_online_action",
+    "capped_live_metric",
     "composite_policy_score",
     "compute_capital_efficiency",
     "compute_counterfactual_attribution",
@@ -257,6 +274,7 @@ __all__ = [
     "detect_orphaned_orders",
     "dynamic_fractional_kelly_fraction",
     "derive_adaptive_family_weights",
+    "determine_session_phase",
     "estimate_latency_penalty",
     "evaluate_bucket_health",
     "evaluate_challenger_dr",
@@ -307,11 +325,14 @@ __all__ = [
     "replay_records",
     "require_broker_parity_before_entries",
     "resolve_order_status",
+    "run_preflight_checks",
     "run_chaos_suite",
     "rows_for_alpha_family",
     "score_incremental_capital_efficiency",
+    "selected_candidates",
     "select_champion_policy",
     "select_concentrated_portfolio",
+    "select_structure",
     "should_kill_alpha",
     "should_pause_trading",
     "should_promote_alpha",
@@ -319,9 +340,11 @@ __all__ = [
     "stable_hash",
     "stage_capital_multiplier",
     "stamp_decision_context",
+    "structure_score",
     "summarize_bucket_health",
     "summarize_execution_audits",
     "summarize_fill_calibration",
+    "thesis_key_for_candidate",
     "update_entry_policy",
     "update_online_policy",
     "update_state",
